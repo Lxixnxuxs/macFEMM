@@ -222,6 +222,37 @@ final class FemmDocument: ObservableObject {
 
     var raw: OpaquePointer? { handle }
 
+    func adoptLuaDocument(_ newHandle: OpaquePointer, path: String?) {
+        if let old = handle { femm_doc_free(old) }
+        if let oldResult = resultHandle { femm_result_free(oldResult) }
+        handle = newHandle
+        resultHandle = nil
+        fileURL = path.map { URL(fileURLWithPath: $0) }
+        selectedNodes.removeAll()
+        selectedSegments.removeAll()
+        selectedLabels.removeAll()
+        contour.removeAll()
+        result = ResultSnapshot()
+        isDirty = true
+        rebuildSnapshot()
+    }
+
+    func adoptLuaResult(_ newHandle: OpaquePointer) {
+        if let old = resultHandle { femm_result_free(old) }
+        resultHandle = newHandle
+        contour.removeAll()
+        rebuildResultSnapshot()
+    }
+
+    func refreshAfterLuaEvaluation() {
+        selectedNodes.removeAll()
+        selectedSegments.removeAll()
+        selectedLabels.removeAll()
+        isDirty = true
+        rebuildSnapshot()
+        if resultHandle != nil { rebuildResultSnapshot() }
+    }
+
     // MARK: - Snapshot rebuild
     func rebuildSnapshot() {
         guard let h = handle else { return }

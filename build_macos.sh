@@ -7,7 +7,7 @@
 #   build/hsolv/hsolve         (heat)
 #   build/fkn/fknsolve         (magnetics: static 2D, axi, harmonic 2D, axi)
 #   build/triangle/triangle    (Shewchuk mesher)
-#   build/lua/libfemm_lua.a    (embedded Lua, used only by fknsolve)
+#   build/lua/libfemm_lua.a    (embedded Lua, used by fknsolve + libfemm_core)
 #
 # Usage: ./build_macos.sh
 # Requires: clang++ (Xcode command-line tools), bash 3.2+, ar.
@@ -92,7 +92,7 @@ clang -DNO_TIMER -DANSI_DECLARATORS \
 echo "built  build/triangle/triangle"
 
 # ---------- libfemm_core (static archive, Phase A) --------------------------
-CORE_FLAGS=(-std=c++17 -O2 -Wall -Ilibfemm_core)
+CORE_FLAGS=(-std=c++17 -O2 -Wall -include compat/mfc_compat.h -Iliblua -Ilibfemm_core -Icompat)
 CORE_SRCS=(
   libfemm_core/femm_error.cpp
   libfemm_core/femm_doc.cpp
@@ -100,6 +100,7 @@ CORE_SRCS=(
   libfemm_core/femm_mesh.cpp
   libfemm_core/femm_props.cpp
   libfemm_core/femm_result.cpp
+  libfemm_core/femm_lua.cpp
 )
 CORE_OBJS=()
 for s in "${CORE_SRCS[@]}"; do
@@ -108,7 +109,7 @@ for s in "${CORE_SRCS[@]}"; do
   clang++ -c "${CORE_FLAGS[@]}" "$s" -o "$out"
 done
 rm -f build/libfemm_core/libfemm_core.a
-ar rcs build/libfemm_core/libfemm_core.a "${CORE_OBJS[@]}"
+ar rcs build/libfemm_core/libfemm_core.a "${CORE_OBJS[@]}" "${LUA_OBJS[@]}"
 echo "built  build/libfemm_core/libfemm_core.a"
 
 # ---------- femm_cli_smoke (Phase A verification) ---------------------------
@@ -131,6 +132,13 @@ clang++ "${CORE_FLAGS[@]}" \
   build/libfemm_core/libfemm_core.a \
   -o build/libfemm_core/femm_cli_regression
 echo "built  build/libfemm_core/femm_cli_regression"
+
+# ---------- femm_cli_lua (Lua compatibility smoke) -------------------------
+clang++ "${CORE_FLAGS[@]}" \
+  libfemm_core/femm_cli_lua.cpp \
+  build/libfemm_core/libfemm_core.a \
+  -o build/libfemm_core/femm_cli_lua
+echo "built  build/libfemm_core/femm_cli_lua"
 
 echo
 echo "all binaries built under $ROOT/build/"

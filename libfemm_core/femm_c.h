@@ -64,6 +64,7 @@ typedef struct femm_complex_s { double re, im; } femm_complex_t;
 /* --- Opaque handles ----------------------------------------------------- */
 typedef struct femm_doc femm_doc_t;
 typedef struct femm_result femm_result_t;
+typedef struct femm_lua_session femm_lua_session_t;
 
 /* --- Global ------------------------------------------------------------- */
 const char*   femm_last_error_message(void);
@@ -565,6 +566,35 @@ femm_status_t femm_result_curr_line_integral (const femm_result_t*, const femm_d
 femm_status_t femm_result_curr_block_integral(const femm_result_t*, const femm_doc_t*,
     int32_t type, const int32_t* label_mask, size_t num_labels,
     femm_complex_t* out_z);
+
+/* --- Lua 4.0 compatibility session ---------------------------------------- */
+/* The Lua session owns the interpreter and console text. It does not own the
+ * active document/result passed through femm_lua_session_set_active. Handles
+ * returned by femm_lua_take_replacement_* transfer ownership to the caller. */
+femm_status_t femm_lua_session_new(femm_lua_session_t** out);
+void          femm_lua_session_free(femm_lua_session_t*);
+void          femm_lua_session_set_active(femm_lua_session_t*,
+                                          femm_doc_t* doc,
+                                          femm_result_t* result,
+                                          const char* doc_path_or_null);
+
+femm_status_t femm_lua_eval     (femm_lua_session_t*, const char* text);
+femm_status_t femm_lua_eval_file(femm_lua_session_t*, const char* path);
+
+const char*   femm_lua_output(const femm_lua_session_t*);
+const char*   femm_lua_error (const femm_lua_session_t*);
+void          femm_lua_clear_output(femm_lua_session_t*);
+
+int32_t       femm_lua_take_replacement_doc(femm_lua_session_t*,
+                                            femm_doc_t** out_doc,
+                                            femm_physics_t* out_physics,
+                                            const char** out_path);
+int32_t       femm_lua_take_replacement_result(femm_lua_session_t*,
+                                               femm_result_t** out_result,
+                                               const char** out_path);
+
+size_t        femm_lua_num_commands(void);
+const char*   femm_lua_command_name(size_t idx);
 
 #ifdef __cplusplus
 }

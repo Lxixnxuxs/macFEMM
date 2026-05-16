@@ -18,6 +18,8 @@ struct ContentView: View {
     @State private var pointQuery: PointQuery?
     @State private var postTool: PostTool = .query
     @State private var logExpanded = false
+    @StateObject private var luaConsole = LuaConsoleModel()
+    @State private var luaConsoleWindow: LuaConsoleWindowController?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -96,6 +98,8 @@ struct ContentView: View {
             .frame(maxWidth: 480)
 
             Spacer()
+
+            Button("Open LUA Console") { openLuaConsole() }
 
             Button("Simulation Settings") { showProblemSheet = true }
 
@@ -221,5 +225,12 @@ struct ContentView: View {
                 .appendingPathComponent("femm_scratch_\(Int.random(in: 0...Int.max))")
         }
         solver.run(doc: doc, tempPath: base.path)
+    }
+
+    private func openLuaConsole() {
+        if luaConsoleWindow == nil {
+            luaConsoleWindow = LuaConsoleWindowController(model: luaConsole)
+        }
+        luaConsoleWindow?.show(document: doc)
     }
 }
