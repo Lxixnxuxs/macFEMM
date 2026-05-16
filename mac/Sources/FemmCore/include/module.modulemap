@@ -1,0 +1,4 @@
+module FemmCore {
+    header "FemmCore.h"
+    export *
+}
