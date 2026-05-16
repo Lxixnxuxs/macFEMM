@@ -101,6 +101,7 @@ struct CanvasView: View {
     @State private var pinchLast: CGFloat = 1.0
     @State private var draggingNode: Int? = nil
     @State private var dragStartedAt: CGPoint? = nil
+    @State private var dragPreviewNode: (idx: Int, point: CGPoint)? = nil
 
     var body: some View {
         GeometryReader { proxy in
@@ -153,6 +154,14 @@ struct CanvasView: View {
             x: viewport.center.x + (p.x - size.width / 2) / viewport.scale,
             y: viewport.center.y - (p.y - size.height / 2) / viewport.scale
         )
+    }
+
+    private func nodePoint(_ idx: Int) -> CGPoint {
+        if let preview = dragPreviewNode, preview.idx == idx {
+            return preview.point
+        }
+        let n = doc.snapshot.nodes[idx]
+        return CGPoint(x: n.x, y: n.y)
     }
 
     // MARK: - Drawing
@@ -262,10 +271,10 @@ struct CanvasView: View {
         for (i, seg) in doc.snapshot.segments.enumerated() {
             guard seg.n0 >= 0, Int(seg.n0) < doc.snapshot.nodes.count,
                   seg.n1 >= 0, Int(seg.n1) < doc.snapshot.nodes.count else { continue }
-            let a = doc.snapshot.nodes[Int(seg.n0)]
-            let b = doc.snapshot.nodes[Int(seg.n1)]
-            let pa = worldToView(CGPoint(x: a.x, y: a.y), size: size)
-            let pb = worldToView(CGPoint(x: b.x, y: b.y), size: size)
+            let a = nodePoint(Int(seg.n0))
+            let b = nodePoint(Int(seg.n1))
+            let pa = worldToView(a, size: size)
+            let pb = worldToView(b, size: size)
             var path = Path(); path.move(to: pa); path.addLine(to: pb)
             let color: Color = doc.selectedSegments.contains(i) ? .orange :
                                (seg.bdryIdx > 0 ? .blue : Color(nsColor: .labelColor))
@@ -278,21 +287,23 @@ struct CanvasView: View {
         for a in doc.snapshot.arcs {
             guard a.n0 >= 0, Int(a.n0) < doc.snapshot.nodes.count,
                   a.n1 >= 0, Int(a.n1) < doc.snapshot.nodes.count else { continue }
-            let n0 = doc.snapshot.nodes[Int(a.n0)]
-            let n1 = doc.snapshot.nodes[Int(a.n1)]
-            let dx = n1.x - n0.x, dy = n1.y - n0.y
+            let n0 = nodePoint(Int(a.n0))
+            let n1 = nodePoint(Int(a.n1))
+            let x0 = Double(n0.x), y0 = Double(n0.y)
+            let x1 = Double(n1.x), y1 = Double(n1.y)
+            let dx = x1 - x0, dy = y1 - y0
             let chord = hypot(dx, dy)
             let half = a.arcDeg * .pi / 360.0
             guard sin(half) != 0 else { continue }
             let r = chord / (2 * sin(half))
-            let mx = 0.5 * (n0.x + n1.x), my = 0.5 * (n0.y + n1.y)
+            let mx = 0.5 * (x0 + x1), my = 0.5 * (y0 + y1)
             let nx = -dy / chord, ny = dx / chord
             let d = r * cos(half)
             let cx = mx + nx * d, cy = my + ny * d
             // Approximate arc with N line segments in world space, then project.
             let steps = max(8, Int(a.arcDeg / 2.0))
             var path = Path()
-            let ang0 = atan2(n0.y - cy, n0.x - cx)
+            let ang0 = atan2(y0 - cy, x0 - cx)
             for k in 0...steps {
                 let t = Double(k) / Double(steps)
                 let ang = ang0 + t * (a.arcDeg * .pi / 180.0)
@@ -307,7 +318,8 @@ struct CanvasView: View {
 
     private func drawNodes(ctx: GraphicsContext, size: CGSize) {
         for (i, n) in doc.snapshot.nodes.enumerated() {
-            let p = worldToView(CGPoint(x: n.x, y: n.y), size: size)
+            let world = (dragPreviewNode?.idx == i) ? dragPreviewNode!.point : CGPoint(x: n.x, y: n.y)
+            let p = worldToView(world, size: size)
             let selected = doc.selectedNodes.contains(i)
             let r: CGFloat = selected ? 5 : 3
             let rect = CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)
@@ -315,8 +327,7 @@ struct CanvasView: View {
                      with: .color(selected ? .orange : .red))
         }
         if let start = pendingSegmentStart, Int(start) < doc.snapshot.nodes.count {
-            let n = doc.snapshot.nodes[Int(start)]
-            let p = worldToView(CGPoint(x: n.x, y: n.y), size: size)
+            let p = worldToView(nodePoint(Int(start)), size: size)
             let r: CGFloat = 8
             let rect = CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)
             ctx.stroke(Path(ellipseIn: rect), with: .color(.green), lineWidth: 2)
@@ -356,7 +367,7 @@ struct CanvasView: View {
                 if let i = draggingNode {
                     let w = viewToWorld(g.location, size: size)
                     let snap = snapped(w)
-                    doc.moveNode(idx: i, x: snap.x, y: snap.y)
+                    dragPreviewNode = (i, snap)
                 } else {
                     let dx = (g.translation.width - panLast.width) / viewport.scale
                     let dy = (g.translation.height - panLast.height) / viewport.scale
@@ -366,9 +377,13 @@ struct CanvasView: View {
                 }
             }
             .onEnded { _ in
+                if let preview = dragPreviewNode {
+                    doc.moveNode(idx: preview.idx, x: preview.point.x, y: preview.point.y)
+                }
                 panLast = .zero
                 draggingNode = nil
                 dragStartedAt = nil
+                dragPreviewNode = nil
             }
     }
 

@@ -39,6 +39,7 @@ struct PlotSettings: Equatable {
     var showMesh: Bool = false
     var smoothShading: Bool = true
     var autoRange: Bool = true
+    var showGeometry: Bool = false
     var manualMin: Double = 0
     var manualMax: Double = 1
 }
@@ -50,6 +51,122 @@ struct PointQuery: Equatable {
     var vx: Double
     var vy: Double
     var vmag: Double { (vx*vx + vy*vy).squareRoot() }
+}
+
+struct WorldBounds {
+    var minX: Double
+    var minY: Double
+    var maxX: Double
+    var maxY: Double
+
+    func intersects(_ other: WorldBounds) -> Bool {
+        maxX >= other.minX && minX <= other.maxX &&
+        maxY >= other.minY && minY <= other.maxY
+    }
+}
+
+struct DensityBandPolygon {
+    var points: [CGPoint]
+    var bounds: WorldBounds
+    var bin: Int
+}
+
+struct ContourSegment {
+    var a: CGPoint
+    var b: CGPoint
+    var bounds: WorldBounds
+}
+
+struct PostRenderData {
+    var isEmpty = true
+    var field: PlotField = .vectorMag
+    var smooth: Bool = true
+    var contourLevels: Int = 19
+    var plotMin: Double = 0
+    var plotMax: Double = 1
+    var elementBounds: [WorldBounds] = []
+    var scalarElementValues: [Double] = []
+    var vectorElementMagnitudes: [Double] = []
+    var nodeVectorMagnitudes: [Double] = []
+    var smoothDensityPolygons: [DensityBandPolygon] = []
+    var contourSegments: [ContourSegment] = []
+
+    static let empty = PostRenderData()
+}
+
+func makePostRenderData(result r: ResultSnapshot,
+                        labels: [DocSnapshot.Label],
+                        field: PlotField,
+                        settings: PlotSettings,
+                        includeSmoothDensityPolygons: Bool = false) -> PostRenderData {
+    guard !r.isEmpty else { return .empty }
+    let m = r.elementLabels.count
+    var data = PostRenderData(isEmpty: false,
+                              field: field,
+                              smooth: settings.smoothShading,
+                              contourLevels: settings.contourLevels)
+    data.elementBounds.reserveCapacity(m)
+    data.scalarElementValues.reserveCapacity(m)
+    data.vectorElementMagnitudes.reserveCapacity(m)
+
+    for e in 0..<m {
+        let a = Int(r.elements[3*e])
+        let b = Int(r.elements[3*e + 1])
+        let c = Int(r.elements[3*e + 2])
+        let xs = [r.nodeX[a], r.nodeX[b], r.nodeX[c]]
+        let ys = [r.nodeY[a], r.nodeY[b], r.nodeY[c]]
+        data.elementBounds.append(WorldBounds(minX: xs.min() ?? 0,
+                                              minY: ys.min() ?? 0,
+                                              maxX: xs.max() ?? 0,
+                                              maxY: ys.max() ?? 0))
+        data.scalarElementValues.append((r.nodeScalar[a] + r.nodeScalar[b] + r.nodeScalar[c]) / 3.0)
+        let vx = r.elementVx[e], vy = r.elementVy[e]
+        data.vectorElementMagnitudes.append((vx*vx + vy*vy).squareRoot())
+    }
+
+    let range = cachedPlotRange(result: r, field: field, settings: settings,
+                                labels: labels, scalarValues: data.scalarElementValues,
+                                vectorMagnitudes: data.vectorElementMagnitudes)
+    data.plotMin = range.0
+    data.plotMax = range.1
+    data.nodeVectorMagnitudes = nodeMagnitudesFromElements(r)
+
+    if settings.smoothShading && includeSmoothDensityPolygons {
+        let nodeVals = (field == .scalar) ? r.nodeScalar : data.nodeVectorMagnitudes
+        data.smoothDensityPolygons = makeSmoothDensityPolygons(result: r, nodeVals: nodeVals,
+                                                               vmin: data.plotMin, vmax: data.plotMax)
+    }
+    data.contourSegments = makeContourSegments(result: r, levels: settings.contourLevels,
+                                               vmin: r.scalarMin, vmax: r.scalarMax)
+    return data
+}
+
+func cachedPlotRange(result r: ResultSnapshot,
+                     field: PlotField,
+                     settings: PlotSettings,
+                     labels: [DocSnapshot.Label],
+                     scalarValues: [Double],
+                     vectorMagnitudes: [Double]) -> (Double, Double) {
+    if !settings.autoRange { return (settings.manualMin, settings.manualMax) }
+    var extLabel = [Bool](repeating: false, count: labels.count)
+    for (i, l) in labels.enumerated() { extLabel[i] = l.isExternal }
+    let values = (field == .scalar) ? scalarValues : vectorMagnitudes
+    var vmin = Double.infinity
+    var vmax = -Double.infinity
+    var kept = 0
+    for e in 0..<r.elementLabels.count {
+        let li = Int(r.elementLabels[e])
+        if li >= 0 && li < extLabel.count && extLabel[li] { continue }
+        let v = values[e]
+        if v < vmin { vmin = v }
+        if v > vmax { vmax = v }
+        kept += 1
+    }
+    if kept > 0 && vmax > vmin { return (vmin, vmax) }
+    switch field {
+    case .scalar:    return (r.scalarMin, r.scalarMax)
+    case .vectorMag: return (r.vectorMagMin, r.vectorMagMax)
+    }
 }
 
 // MARK: - BELA colormap (FEMM Windows parity)
@@ -86,7 +203,11 @@ func viridis(_ t: Double) -> Color {
     let u = max(0.0, min(1.0, t))
     var bin = Int(u * 20.0)
     if bin > 19 { bin = 19 }
-    let c = belaPalette[bin]
+    return belaColor(bin)
+}
+
+func belaColor(_ bin: Int) -> Color {
+    let c = belaPalette[max(0, min(19, bin))]
     return Color(red: c.0, green: c.1, blue: c.2)
 }
 
@@ -226,6 +347,7 @@ struct PostProcessorPanel: View {
             Toggle("Mesh", isOn: $settings.showMesh)
             Toggle("Smooth shading", isOn: $settings.smoothShading)
             Toggle("Auto range", isOn: $settings.autoRange)
+            Toggle("Geometry", isOn: $settings.showGeometry)
             if !settings.autoRange {
                 HStack {
                     TextField("min", value: $settings.manualMin, format: .number)
@@ -378,6 +500,44 @@ func drawDensity(ctx: GraphicsContext, result: ResultSnapshot,
     }
 }
 
+func drawDensityPrepared(ctx: GraphicsContext,
+                         result: ResultSnapshot,
+                         data: PostRenderData,
+                         visible: WorldBounds,
+                         w2v: (CGPoint) -> CGPoint) {
+    guard !data.isEmpty else { return }
+    if data.smooth {
+        for poly in data.smoothDensityPolygons where poly.bounds.intersects(visible) {
+            guard let first = poly.points.first else { continue }
+            var path = Path()
+            path.move(to: w2v(first))
+            for p in poly.points.dropFirst() { path.addLine(to: w2v(p)) }
+            path.closeSubpath()
+            let color = belaColor(poly.bin)
+            ctx.fill(path, with: .color(color))
+            ctx.stroke(path, with: .color(color), lineWidth: 0.5)
+        }
+        return
+    }
+
+    let span = max(1e-30, data.plotMax - data.plotMin)
+    for e in 0..<result.elementLabels.count where data.elementBounds[e].intersects(visible) {
+        let a = Int(result.elements[3*e])
+        let b = Int(result.elements[3*e + 1])
+        let c = Int(result.elements[3*e + 2])
+        let pa = w2v(CGPoint(x: result.nodeX[a], y: result.nodeY[a]))
+        let pb = w2v(CGPoint(x: result.nodeX[b], y: result.nodeY[b]))
+        let pc = w2v(CGPoint(x: result.nodeX[c], y: result.nodeY[c]))
+        var path = Path()
+        path.move(to: pa); path.addLine(to: pb); path.addLine(to: pc); path.closeSubpath()
+        let values = (data.field == .scalar) ? data.scalarElementValues : data.vectorElementMagnitudes
+        let t = (values[e] - data.plotMin) / span
+        let color = viridis(t)
+        ctx.fill(path, with: .color(color))
+        ctx.stroke(path, with: .color(color), lineWidth: 0.6)
+    }
+}
+
 /// Build per-node scalar values from per-element data by averaging the
 /// elements incident on each node (area-weighted would be fancier but equal
 /// weighting already matches Windows closely enough).
@@ -397,6 +557,88 @@ func nodeMagnitudesFromElements(_ r: ResultSnapshot) -> [Double] {
     var out = [Double](repeating: 0, count: r.nodeX.count)
     for i in 0..<out.count { out[i] = cnt[i] > 0 ? sum[i] / Double(cnt[i]) : 0 }
     return out
+}
+
+func makeSmoothDensityPolygons(result: ResultSnapshot,
+                               nodeVals: [Double],
+                               vmin: Double,
+                               vmax: Double) -> [DensityBandPolygon] {
+    let m = result.elementLabels.count
+    let span = max(1e-30, vmax - vmin)
+    let bins = 20
+    var out: [DensityBandPolygon] = []
+    out.reserveCapacity(m * 3)
+    for e in 0..<m {
+        let ia = Int(result.elements[3*e])
+        let ib = Int(result.elements[3*e + 1])
+        let ic = Int(result.elements[3*e + 2])
+        let xa = result.nodeX[ia], ya = result.nodeY[ia], va = nodeVals[ia]
+        let xb = result.nodeX[ib], yb = result.nodeY[ib], vb = nodeVals[ib]
+        let xc = result.nodeX[ic], yc = result.nodeY[ic], vc = nodeVals[ic]
+        let tri: [(x: Double, y: Double, v: Double)] = [
+            (xa, ya, va), (xb, yb, vb), (xc, yc, vc)
+        ]
+        let triMin = min(va, min(vb, vc))
+        let triMax = max(va, max(vb, vc))
+        var b0 = Int(((triMin - vmin) / span) * Double(bins))
+        var b1 = Int(((triMax - vmin) / span) * Double(bins))
+        if b0 < 0 { b0 = 0 }
+        if b1 > bins - 1 { b1 = bins - 1 }
+        if b1 < b0 { continue }
+        for b in b0...b1 {
+            let lo = vmin + span * Double(b) / Double(bins)
+            let hi = vmin + span * Double(b + 1) / Double(bins)
+            let poly = clipTriangleByBand(tri, lo: lo, hi: hi)
+            guard poly.count >= 3 else { continue }
+            let points = poly.map { CGPoint(x: $0.x, y: $0.y) }
+            out.append(DensityBandPolygon(points: points,
+                                          bounds: boundsFor(points),
+                                          bin: b))
+        }
+    }
+    return out
+}
+
+func makeContourSegments(result: ResultSnapshot,
+                         levels: Int,
+                         vmin: Double,
+                         vmax: Double) -> [ContourSegment] {
+    guard levels > 0, vmax > vmin else { return [] }
+    let m = result.elementLabels.count
+    var out: [ContourSegment] = []
+    out.reserveCapacity(m * levels / 3)
+    for li in 1...levels {
+        let level = vmin + (vmax - vmin) * Double(li) / Double(levels + 1)
+        for e in 0..<m {
+            let ia = Int(result.elements[3*e])
+            let ib = Int(result.elements[3*e + 1])
+            let ic = Int(result.elements[3*e + 2])
+            let pts = triCross(level: level,
+                               v: [result.nodeScalar[ia], result.nodeScalar[ib], result.nodeScalar[ic]],
+                               p: [(result.nodeX[ia], result.nodeY[ia]),
+                                   (result.nodeX[ib], result.nodeY[ib]),
+                                   (result.nodeX[ic], result.nodeY[ic])])
+            if pts.count == 2 {
+                let a = CGPoint(x: pts[0].0, y: pts[0].1)
+                let b = CGPoint(x: pts[1].0, y: pts[1].1)
+                out.append(ContourSegment(a: a, b: b, bounds: boundsFor([a, b])))
+            }
+        }
+    }
+    return out
+}
+
+func boundsFor(_ points: [CGPoint]) -> WorldBounds {
+    guard let first = points.first else {
+        return WorldBounds(minX: 0, minY: 0, maxX: 0, maxY: 0)
+    }
+    var minX = Double(first.x), maxX = Double(first.x)
+    var minY = Double(first.y), maxY = Double(first.y)
+    for p in points.dropFirst() {
+        minX = min(minX, Double(p.x)); maxX = max(maxX, Double(p.x))
+        minY = min(minY, Double(p.y)); maxY = max(maxY, Double(p.y))
+    }
+    return WorldBounds(minX: minX, minY: minY, maxX: maxX, maxY: maxY)
 }
 
 /// Smooth banded density plot using per-node values. For each triangle we
@@ -515,6 +757,18 @@ func drawContours(ctx: GraphicsContext, result: ResultSnapshot,
     ctx.stroke(path, with: .color(.black.opacity(0.4)), lineWidth: 0.6)
 }
 
+func drawContoursPrepared(ctx: GraphicsContext,
+                          data: PostRenderData,
+                          visible: WorldBounds,
+                          w2v: (CGPoint) -> CGPoint) {
+    var path = Path()
+    for seg in data.contourSegments where seg.bounds.intersects(visible) {
+        path.move(to: w2v(seg.a))
+        path.addLine(to: w2v(seg.b))
+    }
+    ctx.stroke(path, with: .color(.black.opacity(0.4)), lineWidth: 0.6)
+}
+
 fileprivate func triCross(level: Double, v: [Double], p: [(Double, Double)]) -> [(Double, Double)] {
     var out: [(Double, Double)] = []
     for (i, j) in [(0,1), (1,2), (2,0)] {
@@ -579,6 +833,26 @@ func drawMesh(ctx: GraphicsContext, result: ResultSnapshot,
     let m = result.elementLabels.count
     var path = Path()
     for e in 0..<m {
+        let a = Int(result.elements[3*e])
+        let b = Int(result.elements[3*e + 1])
+        let c = Int(result.elements[3*e + 2])
+        let pa = w2v(CGPoint(x: result.nodeX[a], y: result.nodeY[a]))
+        let pb = w2v(CGPoint(x: result.nodeX[b], y: result.nodeY[b]))
+        let pc = w2v(CGPoint(x: result.nodeX[c], y: result.nodeY[c]))
+        path.move(to: pa); path.addLine(to: pb)
+        path.move(to: pb); path.addLine(to: pc)
+        path.move(to: pc); path.addLine(to: pa)
+    }
+    ctx.stroke(path, with: .color(.gray.opacity(0.35)), lineWidth: 0.4)
+}
+
+func drawMeshPrepared(ctx: GraphicsContext,
+                      result: ResultSnapshot,
+                      data: PostRenderData,
+                      visible: WorldBounds,
+                      w2v: (CGPoint) -> CGPoint) {
+    var path = Path()
+    for e in 0..<result.elementLabels.count where data.elementBounds[e].intersects(visible) {
         let a = Int(result.elements[3*e])
         let b = Int(result.elements[3*e + 1])
         let c = Int(result.elements[3*e + 2])

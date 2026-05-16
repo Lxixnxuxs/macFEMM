@@ -11,12 +11,23 @@ struct PostCanvasView: View {
     @State private var panLast: CGSize = .zero
     @State private var pinchLast: CGFloat = 1.0
     @State private var hoverPoint: CGPoint? = nil
+    @State private var renderData = PostRenderData.empty
 
     var body: some View {
         GeometryReader { proxy in
-            Canvas { ctx, size in
-                draw(ctx: ctx, size: size)
+            ZStack {
+                if settings.showDensity && metalDensityReady {
+                    PostMetalDensityView(result: doc.result,
+                                         data: renderData,
+                                         viewport: viewport,
+                                         settings: settings)
+                }
+                Canvas { ctx, size in
+                    draw(ctx: ctx, size: size, viewport: viewport, data: renderData)
+                }
             }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipped()
             .background(Color(nsColor: .textBackgroundColor))
             .contentShape(Rectangle())
             .gesture(panGesture())
@@ -26,7 +37,9 @@ struct PostCanvasView: View {
                     pinchLast = v
                     zoom(by: delta, around: hoverPoint, size: proxy.size)
                 }
-                .onEnded { _ in pinchLast = 1.0 })
+                .onEnded { _ in
+                    pinchLast = 1.0
+                })
             .background(ScrollZoomCatcher(
                 onZoom: { dy in
                     zoom(by: pow(1.0015, dy), around: hoverPoint, size: proxy.size)
@@ -49,11 +62,14 @@ struct PostCanvasView: View {
             }
             .overlay(alignment: .topLeading) {
                 if !doc.result.isEmpty {
-                    let (vmin, vmax) = plotRange(doc.result, field: settings.field, settings: settings, doc: doc)
-                    ColorBarLegend(vmin: vmin, vmax: vmax, label: fieldLabel())
+                    ColorBarLegend(vmin: renderData.plotMin, vmax: renderData.plotMax, label: fieldLabel())
                         .padding(8)
                 }
             }
+            .onAppear { rebuildRenderData() }
+            .onChange(of: resultSignature) { _, _ in rebuildRenderData() }
+            .onChange(of: labelsSignature) { _, _ in rebuildRenderData() }
+            .onChange(of: settings) { _, _ in rebuildRenderData() }
         }
     }
 
@@ -64,47 +80,62 @@ struct PostCanvasView: View {
         }
     }
 
-    private func worldToView(_ p: CGPoint, size: CGSize) -> CGPoint {
+    private var resultSignature: String {
+        let r = doc.result
+        return "\(r.nodeX.count):\(r.elementLabels.count):\(r.scalarMin):\(r.scalarMax):\(r.vectorMagMin):\(r.vectorMagMax):\(r.frequency)"
+    }
+
+    private var labelsSignature: String {
+        doc.snapshot.labels.map { $0.isExternal ? "1" : "0" }.joined()
+    }
+
+    private var metalDensityReady: Bool {
+        let r = doc.result
+        let m = r.elementLabels.count
+        return !r.isEmpty &&
+               !renderData.isEmpty &&
+               renderData.scalarElementValues.count >= m &&
+               renderData.vectorElementMagnitudes.count >= m &&
+               renderData.nodeVectorMagnitudes.count >= r.nodeX.count
+    }
+
+    private func worldToView(_ p: CGPoint, size: CGSize, viewport vp: Viewport) -> CGPoint {
         CGPoint(
-            x: size.width / 2 + (p.x - viewport.center.x) * viewport.scale,
-            y: size.height / 2 - (p.y - viewport.center.y) * viewport.scale
+            x: size.width / 2 + (p.x - vp.center.x) * vp.scale,
+            y: size.height / 2 - (p.y - vp.center.y) * vp.scale
         )
     }
-    private func viewToWorld(_ p: CGPoint, size: CGSize) -> CGPoint {
+    private func viewToWorld(_ p: CGPoint, size: CGSize, viewport vp: Viewport) -> CGPoint {
         CGPoint(
-            x: viewport.center.x + (p.x - size.width / 2) / viewport.scale,
-            y: viewport.center.y - (p.y - size.height / 2) / viewport.scale
+            x: vp.center.x + (p.x - size.width / 2) / vp.scale,
+            y: vp.center.y - (p.y - size.height / 2) / vp.scale
         )
     }
 
-    private func draw(ctx: GraphicsContext, size: CGSize) {
+    private func draw(ctx: GraphicsContext, size: CGSize, viewport vp: Viewport, data: PostRenderData) {
         let r = doc.result
         guard !r.isEmpty else {
             let msg = Text("No solution loaded. Run Analyze.").foregroundStyle(.secondary)
             ctx.draw(msg, at: CGPoint(x: size.width/2, y: size.height/2), anchor: .center)
             return
         }
-        let w2v: (CGPoint) -> CGPoint = { p in self.worldToView(p, size: size) }
-        let v2w: (CGPoint) -> CGPoint = { p in self.viewToWorld(p, size: size) }
-        let (vmin, vmax) = plotRange(r, field: settings.field, settings: settings, doc: doc)
-        if settings.showDensity {
-            drawDensity(ctx: ctx, result: r, field: settings.field,
-                        vmin: vmin, vmax: vmax,
-                        smooth: settings.smoothShading, w2v: w2v)
-        }
+        let w2v: (CGPoint) -> CGPoint = { p in self.worldToView(p, size: size, viewport: vp) }
+        let v2w: (CGPoint) -> CGPoint = { p in self.viewToWorld(p, size: size, viewport: vp) }
+        let visible = visibleWorldBounds(size: size, viewport: vp)
         if settings.showContour {
-            let (smin, smax) = (r.scalarMin, r.scalarMax)
-            drawContours(ctx: ctx, result: r, levels: settings.contourLevels,
-                         vmin: smin, vmax: smax, w2v: w2v)
+            drawContoursPrepared(ctx: ctx, data: data, visible: visible, w2v: w2v)
         }
         if settings.showMesh {
-            drawMesh(ctx: ctx, result: r, w2v: w2v)
+            drawMeshPrepared(ctx: ctx, result: r, data: data, visible: visible, w2v: w2v)
         }
         if settings.showVector {
             let (vmin2, vmax2) = (r.vectorMagMin, r.vectorMagMax)
             drawVectors(ctx: ctx, doc: doc, result: r, grid: settings.vectorGrid,
                         vmin: vmin2, vmax: vmax2,
                         viewSize: size, w2v: w2v, v2w: v2w)
+        }
+        if settings.showGeometry {
+            drawGeometryOverlay(ctx: ctx, size: size, viewport: vp)
         }
         // Point query marker
         if let q = query {
@@ -119,6 +150,85 @@ struct PostCanvasView: View {
             ctx.stroke(ring, with: .color(.red), lineWidth: 1.0)
         }
         drawContour(ctx: ctx, w2v: w2v)
+    }
+
+    private func drawGeometryOverlay(ctx: GraphicsContext, size: CGSize, viewport vp: Viewport) {
+        let nodes = doc.snapshot.nodes
+        var outlines = Path()
+        for seg in doc.snapshot.segments {
+            guard seg.n0 >= 0, Int(seg.n0) < nodes.count,
+                  seg.n1 >= 0, Int(seg.n1) < nodes.count else { continue }
+            let a = nodes[Int(seg.n0)]
+            let b = nodes[Int(seg.n1)]
+            outlines.move(to: worldToView(CGPoint(x: a.x, y: a.y), size: size, viewport: vp))
+            outlines.addLine(to: worldToView(CGPoint(x: b.x, y: b.y), size: size, viewport: vp))
+        }
+        for arc in doc.snapshot.arcs {
+            guard arc.n0 >= 0, Int(arc.n0) < nodes.count,
+                  arc.n1 >= 0, Int(arc.n1) < nodes.count else { continue }
+            appendArc(arc, nodes: nodes, to: &outlines, size: size, viewport: vp)
+        }
+        ctx.stroke(outlines, with: .color(Color(nsColor: .labelColor).opacity(0.8)), lineWidth: 1.1)
+
+        for n in nodes {
+            let p = worldToView(CGPoint(x: n.x, y: n.y), size: size, viewport: vp)
+            let r: CGFloat = 2.5
+            ctx.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)),
+                     with: .color(Color(nsColor: .labelColor).opacity(0.85)))
+        }
+
+        for label in doc.snapshot.labels {
+            let p = worldToView(CGPoint(x: label.x, y: label.y), size: size, viewport: vp)
+            let r: CGFloat = 4
+            var mark = Path()
+            mark.move(to: CGPoint(x: p.x - r, y: p.y))
+            mark.addLine(to: CGPoint(x: p.x + r, y: p.y))
+            mark.move(to: CGPoint(x: p.x, y: p.y - r))
+            mark.addLine(to: CGPoint(x: p.x, y: p.y + r))
+            ctx.stroke(mark, with: .color(.purple.opacity(0.65)), lineWidth: 1.0)
+        }
+    }
+
+    private func appendArc(_ arc: DocSnapshot.Arc,
+                           nodes: [DocSnapshot.Node],
+                           to path: inout Path,
+                           size: CGSize,
+                           viewport vp: Viewport) {
+        let n0 = nodes[Int(arc.n0)]
+        let n1 = nodes[Int(arc.n1)]
+        let dx = n1.x - n0.x
+        let dy = n1.y - n0.y
+        let chord = hypot(dx, dy)
+        guard chord > 0 else { return }
+        let half = arc.arcDeg * .pi / 360.0
+        guard sin(half) != 0 else { return }
+        let r = chord / (2 * sin(half))
+        let mx = 0.5 * (n0.x + n1.x)
+        let my = 0.5 * (n0.y + n1.y)
+        let nx = -dy / chord
+        let ny = dx / chord
+        let d = r * cos(half)
+        let cx = mx + nx * d
+        let cy = my + ny * d
+        let steps = max(8, Int(arc.arcDeg / 2.0))
+        let ang0 = atan2(n0.y - cy, n0.x - cx)
+        for k in 0...steps {
+            let t = Double(k) / Double(steps)
+            let ang = ang0 + t * (arc.arcDeg * .pi / 180.0)
+            let p = worldToView(CGPoint(x: cx + r * cos(ang), y: cy + r * sin(ang)),
+                                size: size,
+                                viewport: vp)
+            if k == 0 { path.move(to: p) } else { path.addLine(to: p) }
+        }
+    }
+
+    private func visibleWorldBounds(size: CGSize, viewport vp: Viewport) -> WorldBounds {
+        let a = viewToWorld(.zero, size: size, viewport: vp)
+        let b = viewToWorld(CGPoint(x: size.width, y: size.height), size: size, viewport: vp)
+        return WorldBounds(minX: min(Double(a.x), Double(b.x)),
+                           minY: min(Double(a.y), Double(b.y)),
+                           maxX: max(Double(a.x), Double(b.x)),
+                           maxY: max(Double(a.y), Double(b.y)))
     }
 
     private func drawContour(ctx: GraphicsContext, w2v: (CGPoint) -> CGPoint) {
@@ -148,21 +258,23 @@ struct PostCanvasView: View {
                 viewport.center.x -= dx
                 viewport.center.y += dy
             }
-            .onEnded { _ in panLast = .zero }
+            .onEnded { _ in
+                panLast = .zero
+            }
     }
 
     private func zoom(by factor: CGFloat, around anchor: CGPoint?, size: CGSize) {
         let f = max(0.2, min(5.0, Double(factor)))
         let anchorView = anchor ?? CGPoint(x: size.width / 2, y: size.height / 2)
-        let worldBefore = viewToWorld(anchorView, size: size)
+        let worldBefore = viewToWorld(anchorView, size: size, viewport: viewport)
         viewport.scale = max(0.01, min(1e8, viewport.scale * f))
-        let worldAfter = viewToWorld(anchorView, size: size)
+        let worldAfter = viewToWorld(anchorView, size: size, viewport: viewport)
         viewport.center.x += worldBefore.x - worldAfter.x
         viewport.center.y += worldBefore.y - worldAfter.y
     }
 
     private func handleTap(at p: CGPoint, size: CGSize) {
-        let w = viewToWorld(p, size: size)
+        let w = viewToWorld(p, size: size, viewport: viewport)
         switch postTool {
         case .contour:
             doc.contourAppend(w)
@@ -174,5 +286,12 @@ struct PostCanvasView: View {
                 query = nil
             }
         }
+    }
+
+    private func rebuildRenderData() {
+        renderData = makePostRenderData(result: doc.result,
+                                        labels: doc.snapshot.labels,
+                                        field: settings.field,
+                                        settings: settings)
     }
 }

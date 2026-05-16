@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -45,6 +46,10 @@ struct Result {
 
 struct femm_result {
     femmcore::Result r;
+    mutable bool spatial_ready = false;
+    mutable double sx0 = 0.0, sy0 = 0.0, sx1 = 0.0, sy1 = 0.0;
+    mutable int snx = 0, sny = 0;
+    mutable std::vector<std::vector<int>> spatial_bins;
 };
 
 namespace femmcore {
@@ -457,22 +462,98 @@ femm_status_t femm_result_get_element_vector(const femm_result_t* r,
     return FEMM_OK;
 }
 
+static bool point_in_element(const femm_result_t* r, size_t e, double x, double y) {
+    int a = r->r.elements_ijk[3*e + 0];
+    int b = r->r.elements_ijk[3*e + 1];
+    int c = r->r.elements_ijk[3*e + 2];
+    double xa = r->r.x[a], ya = r->r.y[a];
+    double xb = r->r.x[b], yb = r->r.y[b];
+    double xc = r->r.x[c], yc = r->r.y[c];
+    double s1 = (xb - xa) * (y - ya) - (yb - ya) * (x - xa);
+    double s2 = (xc - xb) * (y - yb) - (yc - yb) * (x - xb);
+    double s3 = (xa - xc) * (y - yc) - (ya - yc) * (x - xc);
+    bool hasNeg = (s1 < 0) || (s2 < 0) || (s3 < 0);
+    bool hasPos = (s1 > 0) || (s2 > 0) || (s3 > 0);
+    return !(hasNeg && hasPos);
+}
+
+static void ensure_spatial_index(const femm_result_t* r) {
+    if (!r || r->spatial_ready) return;
+    const size_t m = r->r.element_labels.size();
+    if (m == 0 || r->r.x.empty()) {
+        r->spatial_ready = true;
+        return;
+    }
+
+    auto minmaxX = std::minmax_element(r->r.x.begin(), r->r.x.end());
+    auto minmaxY = std::minmax_element(r->r.y.begin(), r->r.y.end());
+    r->sx0 = *minmaxX.first; r->sx1 = *minmaxX.second;
+    r->sy0 = *minmaxY.first; r->sy1 = *minmaxY.second;
+    const double dx = r->sx1 - r->sx0;
+    const double dy = r->sy1 - r->sy0;
+    if (dx <= 0.0 || dy <= 0.0) {
+        r->spatial_ready = true;
+        return;
+    }
+
+    int cells = (int)std::ceil(std::sqrt((double)m));
+    cells = std::max(8, std::min(256, cells));
+    if (dx >= dy) {
+        r->snx = cells;
+        r->sny = std::max(1, (int)std::round(cells * dy / dx));
+    } else {
+        r->sny = cells;
+        r->snx = std::max(1, (int)std::round(cells * dx / dy));
+    }
+    r->spatial_bins.assign((size_t)r->snx * (size_t)r->sny, {});
+
+    auto ix_for = [&](double x) {
+        double u = (x - r->sx0) / dx;
+        return std::max(0, std::min(r->snx - 1, (int)std::floor(u * r->snx)));
+    };
+    auto iy_for = [&](double y) {
+        double u = (y - r->sy0) / dy;
+        return std::max(0, std::min(r->sny - 1, (int)std::floor(u * r->sny)));
+    };
+
+    for (size_t e = 0; e < m; ++e) {
+        int ia = r->r.elements_ijk[3*e + 0];
+        int ib = r->r.elements_ijk[3*e + 1];
+        int ic = r->r.elements_ijk[3*e + 2];
+        double xmin = std::min({r->r.x[ia], r->r.x[ib], r->r.x[ic]});
+        double xmax = std::max({r->r.x[ia], r->r.x[ib], r->r.x[ic]});
+        double ymin = std::min({r->r.y[ia], r->r.y[ib], r->r.y[ic]});
+        double ymax = std::max({r->r.y[ia], r->r.y[ib], r->r.y[ic]});
+        int ix0 = ix_for(xmin), ix1 = ix_for(xmax);
+        int iy0 = iy_for(ymin), iy1 = iy_for(ymax);
+        for (int iy = iy0; iy <= iy1; ++iy) {
+            for (int ix = ix0; ix <= ix1; ++ix) {
+                r->spatial_bins[(size_t)iy * (size_t)r->snx + (size_t)ix].push_back((int)e);
+            }
+        }
+    }
+    r->spatial_ready = true;
+}
+
 int32_t femm_result_locate(const femm_result_t* r, double x, double y) {
     if (!r) return -1;
     const size_t m = r->r.element_labels.size();
+    ensure_spatial_index(r);
+    const double dx = r->sx1 - r->sx0;
+    const double dy = r->sy1 - r->sy0;
+    if (r->snx > 0 && r->sny > 0 && dx > 0.0 && dy > 0.0 &&
+        x >= r->sx0 && x <= r->sx1 && y >= r->sy0 && y <= r->sy1) {
+        int ix = std::max(0, std::min(r->snx - 1, (int)std::floor(((x - r->sx0) / dx) * r->snx)));
+        int iy = std::max(0, std::min(r->sny - 1, (int)std::floor(((y - r->sy0) / dy) * r->sny)));
+        const auto& bin = r->spatial_bins[(size_t)iy * (size_t)r->snx + (size_t)ix];
+        for (int e : bin) {
+            if (point_in_element(r, (size_t)e, x, y)) return (int32_t)e;
+        }
+    }
+    // Degenerate meshes or exact-boundary cases can miss the bin. Preserve
+    // the old behavior as a correctness fallback.
     for (size_t e = 0; e < m; ++e) {
-        int a = r->r.elements_ijk[3*e + 0];
-        int b = r->r.elements_ijk[3*e + 1];
-        int c = r->r.elements_ijk[3*e + 2];
-        double xa = r->r.x[a], ya = r->r.y[a];
-        double xb = r->r.x[b], yb = r->r.y[b];
-        double xc = r->r.x[c], yc = r->r.y[c];
-        double s1 = (xb - xa) * (y - ya) - (yb - ya) * (x - xa);
-        double s2 = (xc - xb) * (y - yb) - (yc - yb) * (x - xb);
-        double s3 = (xa - xc) * (y - yc) - (ya - yc) * (x - xc);
-        bool hasNeg = (s1 < 0) || (s2 < 0) || (s3 < 0);
-        bool hasPos = (s1 > 0) || (s2 > 0) || (s3 > 0);
-        if (!(hasNeg && hasPos)) return (int32_t)e;
+        if (point_in_element(r, e, x, y)) return (int32_t)e;
     }
     return -1;
 }
