@@ -25,6 +25,25 @@ bin/
 .pytest_cache/
 .vs/
 .vscode/
+
+# Local secrets and machine-specific config
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcuserdatad/
+credentials.*
+secrets.*
+.netrc
+.npmrc
+.pypirc
 */Debug/
 */Release/
 *.aux
