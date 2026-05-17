@@ -49,6 +49,14 @@ cp "$ROOT/build/hsolv/hsolve"        "$APP/Contents/MacOS/"
 cp "$ROOT/build/fkn/fknsolve"        "$APP/Contents/MacOS/"
 cp "$ROOT/build/triangle/triangle"   "$APP/Contents/MacOS/"
 
+# Bundle FEMM's legacy material/boundary libraries too. Some imported models
+# and Lua scripts expect these files to live beside the solver binaries.
+for data_file in condlib.dat heatlib.dat init.lua license.txt matlib.dat statlib.dat; do
+  if [ -f "$ROOT/bin/$data_file" ]; then
+    cp "$ROOT/bin/$data_file" "$APP/Contents/MacOS/"
+  fi
+done
+
 if [ -f "$MAC/Sources/macFEMM/Resources/macFEMM.icns" ]; then
   cp "$MAC/Sources/macFEMM/Resources/macFEMM.icns" "$APP/Contents/Resources/macFEMM.icns"
 fi

@@ -71,6 +71,16 @@ final class ResultIntegralAnalysisModel: ObservableObject {
             let value: femm_complex_t
             switch doc.snapshot.physics {
             case .magnetics:
+                if blockType == 11 {
+                    let fx = try doc.magBlockIntegral(type: 11, labelIndices: labels)
+                    let fy = try doc.magBlockIntegral(type: 12, labelIndices: labels)
+                    let scope = blockScope == .all ? "all regions" : "\(labels.count) selected"
+                    blockResults = [
+                        .init(label: "Force x (\(scope))", value: fmtIntegralComplex(fx), unit: type.unit0),
+                        .init(label: "Force y (\(scope))", value: fmtIntegralComplex(fy), unit: type.unit1 ?? type.unit0)
+                    ]
+                    return
+                }
                 value = try doc.magBlockIntegral(type: blockType, labelIndices: labels)
             case .electrostatics:
                 value = try doc.esBlockIntegral(type: blockType, labelIndices: labels)

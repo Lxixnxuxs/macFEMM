@@ -29,10 +29,28 @@ struct PostCanvasView: View {
                                          viewport: viewport,
                                          settings: settings)
                 }
-                Canvas { ctx, size in
-                    draw(ctx: ctx, size: size, viewport: viewport, data: renderData)
+                if doc.result.isEmpty {
+                    Text("No solution loaded. Run Analyze.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    PostMetalOverlayView(doc: doc,
+                                         result: doc.result,
+                                         snapshot: doc.snapshot,
+                                         data: renderData,
+                                         viewport: viewport,
+                                         settings: settings,
+                                         postTool: postTool,
+                                         selectedLabels: doc.selectedLabels,
+                                         contour: doc.contour,
+                                         queryMarkers: queryCallouts.map {
+                                             PostOverlayMarker(x: $0.query.x,
+                                                               y: $0.query.y,
+                                                               isPinned: $0.isPinned)
+                                         })
+                    .allowsHitTesting(false)
                 }
                 queryCalloutLayer(size: proxy.size)
+                contourNumberLayer(size: proxy.size)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .clipped()
@@ -107,6 +125,19 @@ struct PostCanvasView: View {
             .onChange(of: resultSignature) { _, _ in rebuildRenderData() }
             .onChange(of: labelsSignature) { _, _ in rebuildRenderData() }
             .onChange(of: settings) { _, _ in rebuildRenderData() }
+        }
+    }
+
+    @ViewBuilder private func contourNumberLayer(size: CGSize) -> some View {
+        if postTool == .contour {
+            ForEach(Array(doc.contour.enumerated()), id: \.offset) { index, point in
+                let p = worldToView(point, size: size, viewport: viewport)
+                Text("\(index + 1)")
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .position(x: p.x + 10, y: p.y - 10)
+                    .allowsHitTesting(false)
+            }
         }
     }
 
@@ -265,6 +296,8 @@ struct PostCanvasView: View {
                                             w2v: (CGPoint) -> CGPoint) {
         let selected = doc.selectedLabels
         if !selected.isEmpty {
+            var selectedEdges: [RegionEdge: Int] = [:]
+            var selectedRegion = Path()
             for e in 0..<r.elementLabels.count where selected.contains(Int(r.elementLabels[e])) {
                 let a = Int(r.elements[3*e])
                 let b = Int(r.elements[3*e + 1])
@@ -272,14 +305,27 @@ struct PostCanvasView: View {
                 let pa = w2v(CGPoint(x: r.nodeX[a], y: r.nodeY[a]))
                 let pb = w2v(CGPoint(x: r.nodeX[b], y: r.nodeY[b]))
                 let pc = w2v(CGPoint(x: r.nodeX[c], y: r.nodeY[c]))
-                var path = Path()
-                path.move(to: pa)
-                path.addLine(to: pb)
-                path.addLine(to: pc)
-                path.closeSubpath()
-                ctx.fill(path, with: .color(.orange.opacity(0.16)))
-                ctx.stroke(path, with: .color(.orange.opacity(0.34)), lineWidth: 0.8)
+                selectedRegion.move(to: pa)
+                selectedRegion.addLine(to: pb)
+                selectedRegion.addLine(to: pc)
+                selectedRegion.closeSubpath()
+                selectedEdges[RegionEdge(a, b), default: 0] += 1
+                selectedEdges[RegionEdge(b, c), default: 0] += 1
+                selectedEdges[RegionEdge(c, a), default: 0] += 1
             }
+            ctx.fill(selectedRegion, with: .color(.secondary.opacity(0.12)))
+
+            var outline = Path()
+            for (edge, count) in selectedEdges where count == 1 {
+                let a = edge.a
+                let b = edge.b
+                let pa = w2v(CGPoint(x: r.nodeX[a], y: r.nodeY[a]))
+                let pb = w2v(CGPoint(x: r.nodeX[b], y: r.nodeY[b]))
+                outline.move(to: pa)
+                outline.addLine(to: pb)
+            }
+            ctx.stroke(outline, with: .color(.secondary.opacity(0.72)),
+                       style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
         }
 
         for (i, label) in doc.snapshot.labels.enumerated() {
@@ -489,6 +535,16 @@ private struct ResultQueryCallout: Identifiable, Equatable {
     var query: PointQuery
     var offset = CGSize(width: 132, height: -82)
     var isPinned = false
+}
+
+private struct RegionEdge: Hashable {
+    let a: Int
+    let b: Int
+
+    init(_ i: Int, _ j: Int) {
+        a = min(i, j)
+        b = max(i, j)
+    }
 }
 
 private struct ResultQueryCalloutView: View {

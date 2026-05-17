@@ -42,6 +42,8 @@ let magBlockTypes: [IntegralType] = [
     .init(id: 8,  name: "∫Bx",              unit0: "T·m³", unit1: nil),
     .init(id: 9,  name: "∫By",              unit0: "T·m³", unit1: nil),
     .init(id: 10, name: "Volume",           unit0: "m³",   unit1: nil),
+    .init(id: 11, name: "Lorentz force",    unit0: "N",    unit1: "N"),
+    .init(id: 15, name: "Lorentz torque",   unit0: "N·m",  unit1: nil),
 ]
 
 let esLineTypes: [IntegralType] = [

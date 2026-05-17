@@ -913,6 +913,7 @@ femm_status_t femm_result_mag_block_integral(const femm_result_t* r,
         }
         double Jtot[3] = { Jsrc + Jcirc[0], Jsrc + Jcirc[1], Jsrc + Jcirc[2] };
         double Javg = (Jtot[0] + Jtot[1] + Jtot[2]) / 3.0;
+        double U[3] = { 1, 1, 1 };
 
         /* Volume factor for integrals that need it. */
         double vol = axi ? (a * 2.0 * PI_ * R) : (a * depth);
@@ -983,6 +984,24 @@ femm_status_t femm_result_mag_block_integral(const femm_result_t* r,
         }
         case FEMM_MAG_BLOCK_VOLUME: {
             out_z[0].re += vol;
+            break;
+        }
+        case FEMM_MAG_BLOCK_LORENTZ_FX: {
+            if (!axi) out_z[0].re += -a * depth * By * Javg;
+            break;
+        }
+        case FEMM_MAG_BLOCK_LORENTZ_FY: {
+            double v[3] = { Bx * Jtot[0], Bx * Jtot[1], Bx * Jtot[2] };
+            if (axi) out_z[0].re += axiint(-a, U, v, rN);
+            else     out_z[0].re += plnint(a, U, v) * depth;
+            break;
+        }
+        case FEMM_MAG_BLOCK_LORENTZ_TORQ: {
+            if (!axi) {
+                double cx = (xa + xb + xc) * lc / 3.0;
+                double cy = (ya + yb + yc) * lc / 3.0;
+                out_z[0].re += a * depth * Javg * (cx * Bx + cy * By);
+            }
             break;
         }
         default:

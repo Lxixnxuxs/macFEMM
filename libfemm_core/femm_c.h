@@ -512,7 +512,10 @@ typedef enum femm_mag_block_int_e {
     FEMM_MAG_BLOCK_CURRENT     = 7,  /* total current in block (A)           */
     FEMM_MAG_BLOCK_BX          = 8,  /* ∫Bx dV                               */
     FEMM_MAG_BLOCK_BY          = 9,  /* ∫By dV                               */
-    FEMM_MAG_BLOCK_VOLUME      = 10  /* volume (m³)                          */
+    FEMM_MAG_BLOCK_VOLUME      = 10, /* volume (m³)                          */
+    FEMM_MAG_BLOCK_LORENTZ_FX  = 11, /* Lorentz force x/r component (N)      */
+    FEMM_MAG_BLOCK_LORENTZ_FY  = 12, /* Lorentz force y/z component (N)      */
+    FEMM_MAG_BLOCK_LORENTZ_TORQ = 15 /* Lorentz torque about origin (N·m)    */
 } femm_mag_block_int_t;
 
 femm_status_t femm_result_mag_block_integral(const femm_result_t* r,
