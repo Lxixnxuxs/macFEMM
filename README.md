@@ -1,5 +1,7 @@
 # macFEMM
 
+<img src="mac/Sources/macFEMM/Resources/macFEMM.png" alt="macFEMM logo" width="128">
+
 macFEMM is a native macOS port and rewrite of
 [Finite Element Method Magnetics](https://www.femm.info/) (FEMM).
 

@@ -15,6 +15,8 @@ struct SelectedPropertyInspector: View {
     @State private var maxArea: Double = 0
     @State private var magDir: Double = 0
     @State private var maxSide: Double = -1
+    @State private var arcMaxSide: Double = 1
+    @State private var group: Int32 = 0
 
     // When true, state mutations come from syncFromSelection and must not be
     // echoed back to the document.
@@ -32,14 +34,24 @@ struct SelectedPropertyInspector: View {
             turns   = l.turns
             magDir  = l.magDir
             maxArea = l.maxArea
+            group   = l.group
         }
         if let i = doc.selectedSegments.first, i < s.segments.count {
             let seg = s.segments[i]
             boundaryChoice = name(from: s.boundaries, idx1: seg.bdryIdx) ?? "<None>"
+            maxSide = seg.maxSide
+            group = seg.group
+        }
+        if let i = doc.selectedArcs.first, i < s.arcs.count {
+            let arc = s.arcs[i]
+            boundaryChoice = name(from: s.boundaries, idx1: arc.bdryIdx) ?? "<None>"
+            arcMaxSide = arc.maxSideDeg
+            group = arc.group
         }
         if let i = doc.selectedNodes.first, i < s.nodes.count {
             let n = s.nodes[i]
             pointChoice = name(from: s.pointProps, idx1: n.bdryIdx) ?? "<None>"
+            group = n.group
         }
     }
 
@@ -51,8 +63,17 @@ struct SelectedPropertyInspector: View {
     var body: some View {
         let hasNodes = !doc.selectedNodes.isEmpty
         let hasSegs  = !doc.selectedSegments.isEmpty
+        let hasArcs  = !doc.selectedArcs.isEmpty
         let hasLbls  = !doc.selectedLabels.isEmpty
         VStack(alignment: .leading, spacing: 8) {
+            if hasNodes || hasSegs || hasArcs || hasLbls {
+                LabeledContent("Group") {
+                    TextField("", value: $group, format: .number)
+                        .textFieldStyle(.roundedBorder).frame(width: 80)
+                        .onSubmit { if !suppressWrite { doc.setSelectedGroup(group) } }
+                }
+                Divider()
+            }
             if hasNodes {
                 Text("Selected Nodes (\(doc.selectedNodes.count))").font(.subheadline).bold()
                 Picker("Point Prop", selection: $pointChoice) {
@@ -77,6 +98,22 @@ struct SelectedPropertyInspector: View {
                     TextField("", value: $maxSide, format: .number)
                         .textFieldStyle(.roundedBorder).frame(width: 100)
                         .onSubmit { if !suppressWrite { doc.setSegmentMaxSide(maxSide) } }
+                }
+                Divider()
+            }
+            if hasArcs {
+                Text("Selected Arcs (\(doc.selectedArcs.count))").font(.subheadline).bold()
+                Picker("Boundary", selection: $boundaryChoice) {
+                    Text("<None>").tag("<None>")
+                    ForEach(doc.snapshot.boundaries) { b in Text(b.name).tag(b.name) }
+                }
+                .onChange(of: boundaryChoice) { _, v in
+                    if !suppressWrite { doc.assignArcBoundary(v == "<None>" ? nil : v) }
+                }
+                LabeledContent("Max Side (deg)") {
+                    TextField("", value: $arcMaxSide, format: .number)
+                        .textFieldStyle(.roundedBorder).frame(width: 100)
+                        .onSubmit { if !suppressWrite { doc.setArcMaxSideDeg(arcMaxSide) } }
                 }
                 Divider()
             }
@@ -122,14 +159,15 @@ struct SelectedPropertyInspector: View {
                         .onSubmit { if !suppressWrite { doc.setLabelMaxArea(maxArea) } }
                 }
             }
-            if !hasNodes && !hasSegs && !hasLbls {
-                Text("No selection — click nodes, segments, or labels to assign properties.")
+            if !hasNodes && !hasSegs && !hasArcs && !hasLbls {
+                Text("No selection — click nodes, segments, arcs, or labels to assign properties.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
         .onAppear(perform: syncFromSelection)
         .onChange(of: doc.selectedNodes) { _, _ in syncFromSelection() }
         .onChange(of: doc.selectedSegments) { _, _ in syncFromSelection() }
+        .onChange(of: doc.selectedArcs) { _, _ in syncFromSelection() }
         .onChange(of: doc.selectedLabels) { _, _ in syncFromSelection() }
     }
 

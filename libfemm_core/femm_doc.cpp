@@ -233,6 +233,18 @@ femm_status_t femm_set_node_boundary(femm_doc_t* doc, int32_t idx, const char* n
     d->nodes[idx].bdry_idx = d->lookup_point_idx(name ? name : "");
     return FEMM_OK;
 }
+femm_status_t femm_set_node_group(femm_doc_t* doc, int32_t idx, int32_t group) {
+    DOC();
+    if (idx < 0 || (size_t)idx >= d->nodes.size()) return FEMM_ERR_INVALID_ARG;
+    d->nodes[idx].group = group;
+    return FEMM_OK;
+}
+femm_status_t femm_set_node_conductor(femm_doc_t* doc, int32_t idx, const char* name) {
+    DOC();
+    if (idx < 0 || (size_t)idx >= d->nodes.size()) return FEMM_ERR_INVALID_ARG;
+    d->nodes[idx].in_conductor = d->lookup_conductor_idx(name ? name : "");
+    return FEMM_OK;
+}
 femm_status_t femm_set_segment_boundary(femm_doc_t* doc, int32_t idx, const char* name) {
     DOC();
     if (idx < 0 || (size_t)idx >= d->segments.size()) return FEMM_ERR_INVALID_ARG;
@@ -243,6 +255,54 @@ femm_status_t femm_set_segment_max_side(femm_doc_t* doc, int32_t idx, double ms)
     DOC();
     if (idx < 0 || (size_t)idx >= d->segments.size()) return FEMM_ERR_INVALID_ARG;
     d->segments[idx].max_side = ms;
+    return FEMM_OK;
+}
+femm_status_t femm_set_segment_hidden(femm_doc_t* doc, int32_t idx, int32_t hidden) {
+    DOC();
+    if (idx < 0 || (size_t)idx >= d->segments.size()) return FEMM_ERR_INVALID_ARG;
+    d->segments[idx].hidden = hidden ? 1 : 0;
+    return FEMM_OK;
+}
+femm_status_t femm_set_segment_group(femm_doc_t* doc, int32_t idx, int32_t group) {
+    DOC();
+    if (idx < 0 || (size_t)idx >= d->segments.size()) return FEMM_ERR_INVALID_ARG;
+    d->segments[idx].group = group;
+    return FEMM_OK;
+}
+femm_status_t femm_set_segment_conductor(femm_doc_t* doc, int32_t idx, const char* name) {
+    DOC();
+    if (idx < 0 || (size_t)idx >= d->segments.size()) return FEMM_ERR_INVALID_ARG;
+    d->segments[idx].in_conductor = d->lookup_conductor_idx(name ? name : "");
+    return FEMM_OK;
+}
+femm_status_t femm_set_arc_boundary(femm_doc_t* doc, int32_t idx, const char* name) {
+    DOC();
+    if (idx < 0 || (size_t)idx >= d->arcs.size()) return FEMM_ERR_INVALID_ARG;
+    d->arcs[idx].bdry_idx = d->lookup_bdry_idx(name ? name : "");
+    return FEMM_OK;
+}
+femm_status_t femm_set_arc_max_side(femm_doc_t* doc, int32_t idx, double ms) {
+    DOC();
+    if (idx < 0 || (size_t)idx >= d->arcs.size()) return FEMM_ERR_INVALID_ARG;
+    d->arcs[idx].max_side_deg = ms;
+    return FEMM_OK;
+}
+femm_status_t femm_set_arc_hidden(femm_doc_t* doc, int32_t idx, int32_t hidden) {
+    DOC();
+    if (idx < 0 || (size_t)idx >= d->arcs.size()) return FEMM_ERR_INVALID_ARG;
+    d->arcs[idx].hidden = hidden ? 1 : 0;
+    return FEMM_OK;
+}
+femm_status_t femm_set_arc_group(femm_doc_t* doc, int32_t idx, int32_t group) {
+    DOC();
+    if (idx < 0 || (size_t)idx >= d->arcs.size()) return FEMM_ERR_INVALID_ARG;
+    d->arcs[idx].group = group;
+    return FEMM_OK;
+}
+femm_status_t femm_set_arc_conductor(femm_doc_t* doc, int32_t idx, const char* name) {
+    DOC();
+    if (idx < 0 || (size_t)idx >= d->arcs.size()) return FEMM_ERR_INVALID_ARG;
+    d->arcs[idx].in_conductor = d->lookup_conductor_idx(name ? name : "");
     return FEMM_OK;
 }
 femm_status_t femm_set_block_label_material(femm_doc_t* doc, int32_t idx, const char* name) {
@@ -271,6 +331,29 @@ femm_status_t femm_set_block_label_magdir(femm_doc_t* doc, int32_t idx, double d
     d->labels[idx].mag_dir = deg;
     return FEMM_OK;
 }
+femm_status_t femm_set_block_label_group(femm_doc_t* doc, int32_t idx, int32_t group) {
+    DOC();
+    if (idx < 0 || (size_t)idx >= d->labels.size()) return FEMM_ERR_INVALID_ARG;
+    d->labels[idx].group = group;
+    return FEMM_OK;
+}
+femm_status_t femm_set_block_label_external(femm_doc_t* doc, int32_t idx, int32_t is_external) {
+    DOC();
+    if (idx < 0 || (size_t)idx >= d->labels.size()) return FEMM_ERR_INVALID_ARG;
+    d->labels[idx].is_external = is_external ? 1 : 0;
+    return FEMM_OK;
+}
+femm_status_t femm_set_block_label_default(femm_doc_t* doc, int32_t idx, int32_t is_default) {
+    DOC();
+    if (idx < 0 || (size_t)idx >= d->labels.size()) return FEMM_ERR_INVALID_ARG;
+    if (is_default) {
+        for (auto& label : d->labels) label.is_default = 0;
+        d->labels[idx].is_default = 1;
+    } else {
+        d->labels[idx].is_default = 0;
+    }
+    return FEMM_OK;
+}
 
 /* --- Getters ---------------------------------------------------------- */
 size_t femm_num_nodes   (const femm_doc_t* d) { return reinterpret_cast<const Document*>(d)->nodes.size(); }
@@ -282,14 +365,17 @@ femm_status_t femm_get_node(const femm_doc_t* doc, int32_t idx, femm_node_view_t
     auto* d = reinterpret_cast<const Document*>(doc);
     if (!d || !out || idx < 0 || (size_t)idx >= d->nodes.size()) return FEMM_ERR_INVALID_ARG;
     const auto& n = d->nodes[idx];
-    out->x = n.x; out->y = n.y; out->in_group = n.group; out->bdry_idx = n.bdry_idx;
+    out->x = n.x; out->y = n.y; out->in_group = n.group;
+    out->bdry_idx = n.bdry_idx; out->conductor_idx = n.in_conductor;
     return FEMM_OK;
 }
 femm_status_t femm_get_segment(const femm_doc_t* doc, int32_t idx, femm_seg_view_t* out) {
     auto* d = reinterpret_cast<const Document*>(doc);
     if (!d || !out || idx < 0 || (size_t)idx >= d->segments.size()) return FEMM_ERR_INVALID_ARG;
     const auto& s = d->segments[idx];
-    out->n0 = s.n0; out->n1 = s.n1; out->max_side = s.max_side; out->bdry_idx = s.bdry_idx;
+    out->n0 = s.n0; out->n1 = s.n1; out->max_side = s.max_side;
+    out->bdry_idx = s.bdry_idx; out->hidden = s.hidden;
+    out->in_group = s.group; out->conductor_idx = s.in_conductor;
     return FEMM_OK;
 }
 femm_status_t femm_get_arc(const femm_doc_t* doc, int32_t idx, femm_arc_view_t* out) {
@@ -298,6 +384,8 @@ femm_status_t femm_get_arc(const femm_doc_t* doc, int32_t idx, femm_arc_view_t* 
     const auto& a = d->arcs[idx];
     out->n0 = a.n0; out->n1 = a.n1; out->arc_deg = a.arc_deg;
     out->max_side_deg = a.max_side_deg; out->bdry_idx = a.bdry_idx;
+    out->hidden = a.hidden; out->in_group = a.group;
+    out->conductor_idx = a.in_conductor;
     return FEMM_OK;
 }
 femm_status_t femm_get_label(const femm_doc_t* doc, int32_t idx, femm_lbl_view_t* out) {
@@ -307,7 +395,8 @@ femm_status_t femm_get_label(const femm_doc_t* doc, int32_t idx, femm_lbl_view_t
     out->x = l.x; out->y = l.y; out->block_idx = l.block_idx;
     out->max_area = l.max_area; out->circuit_idx = l.circuit_idx;
     out->mag_dir = l.mag_dir; out->turns = l.turns;
-    out->is_external = l.is_external;
+    out->is_external = l.is_external; out->is_default = l.is_default;
+    out->in_group = l.group;
     return FEMM_OK;
 }
 

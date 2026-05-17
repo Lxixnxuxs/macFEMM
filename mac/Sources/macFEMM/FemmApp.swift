@@ -28,6 +28,11 @@ struct FemmApp: App {
                 }
         }
         .commands {
+            CommandGroup(replacing: .undoRedo) {
+                Button("Undo") { appState.document?.undo() }
+                    .keyboardShortcut("z", modifiers: [.command])
+                    .disabled(appState.document?.canUndo != true)
+            }
             CommandGroup(replacing: .newItem) {
                 Menu("New") {
                     Button("Magnetics Problem") { appState.new(.magnetics) }

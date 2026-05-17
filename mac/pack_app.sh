@@ -45,6 +45,10 @@ cp "$ROOT/build/hsolv/hsolve"        "$APP/Contents/MacOS/"
 cp "$ROOT/build/fkn/fknsolve"        "$APP/Contents/MacOS/"
 cp "$ROOT/build/triangle/triangle"   "$APP/Contents/MacOS/"
 
+if [ -f "$MAC/Sources/macFEMM/Resources/macFEMM.icns" ]; then
+  cp "$MAC/Sources/macFEMM/Resources/macFEMM.icns" "$APP/Contents/Resources/macFEMM.icns"
+fi
+
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -54,6 +58,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleDisplayName</key><string>macFEMM</string>
     <key>CFBundleIdentifier</key><string>industries.p2p.macFEMM</string>
     <key>CFBundleExecutable</key><string>macFEMM</string>
+    <key>CFBundleIconFile</key><string>macFEMM</string>
     <key>CFBundleVersion</key><string>0.1</string>
     <key>CFBundleShortVersionString</key><string>0.1</string>
     <key>CFBundlePackageType</key><string>APPL</string>

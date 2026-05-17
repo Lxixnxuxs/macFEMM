@@ -102,9 +102,23 @@ femm_status_t femm_add_block_label(femm_doc_t*, double x, double y,
 
 femm_status_t femm_set_node_boundary(femm_doc_t*, int32_t idx,
                                      const char* point_prop_name_or_null);
+femm_status_t femm_set_node_group(femm_doc_t*, int32_t idx, int32_t group);
+femm_status_t femm_set_node_conductor(femm_doc_t*, int32_t idx,
+                                      const char* conductor_name_or_null);
 femm_status_t femm_set_segment_boundary(femm_doc_t*, int32_t idx,
                                         const char* bdry_name_or_null);
 femm_status_t femm_set_segment_max_side(femm_doc_t*, int32_t idx, double max_side);
+femm_status_t femm_set_segment_hidden(femm_doc_t*, int32_t idx, int32_t hidden);
+femm_status_t femm_set_segment_group(femm_doc_t*, int32_t idx, int32_t group);
+femm_status_t femm_set_segment_conductor(femm_doc_t*, int32_t idx,
+                                         const char* conductor_name_or_null);
+femm_status_t femm_set_arc_boundary(femm_doc_t*, int32_t idx,
+                                    const char* bdry_name_or_null);
+femm_status_t femm_set_arc_max_side(femm_doc_t*, int32_t idx, double max_side_deg);
+femm_status_t femm_set_arc_hidden(femm_doc_t*, int32_t idx, int32_t hidden);
+femm_status_t femm_set_arc_group(femm_doc_t*, int32_t idx, int32_t group);
+femm_status_t femm_set_arc_conductor(femm_doc_t*, int32_t idx,
+                                     const char* conductor_name_or_null);
 femm_status_t femm_set_block_label_material(femm_doc_t*, int32_t idx,
                                             const char* block_prop_name_or_null);
 femm_status_t femm_set_block_label_max_area(femm_doc_t*, int32_t idx, double max_area);
@@ -112,14 +126,37 @@ femm_status_t femm_set_block_label_circuit(femm_doc_t*, int32_t idx,
                                            const char* circuit_name_or_null,
                                            int32_t turns);
 femm_status_t femm_set_block_label_magdir(femm_doc_t*, int32_t idx, double mag_dir_deg);
+femm_status_t femm_set_block_label_group(femm_doc_t*, int32_t idx, int32_t group);
+femm_status_t femm_set_block_label_external(femm_doc_t*, int32_t idx, int32_t is_external);
+femm_status_t femm_set_block_label_default(femm_doc_t*, int32_t idx, int32_t is_default);
 
 /* --- Geometry: read-back ------------------------------------------------ */
-typedef struct femm_node_view_s { double x, y; int32_t in_group; int32_t bdry_idx; } femm_node_view_t;
-typedef struct femm_seg_view_s  { int32_t n0, n1; double max_side; int32_t bdry_idx; } femm_seg_view_t;
-typedef struct femm_arc_view_s  { int32_t n0, n1; double arc_deg, max_side_deg; int32_t bdry_idx; } femm_arc_view_t;
+typedef struct femm_node_view_s {
+    double x, y;
+    int32_t in_group;
+    int32_t bdry_idx;
+    int32_t conductor_idx;
+} femm_node_view_t;
+typedef struct femm_seg_view_s  {
+    int32_t n0, n1;
+    double max_side;
+    int32_t bdry_idx;
+    int32_t hidden;
+    int32_t in_group;
+    int32_t conductor_idx;
+} femm_seg_view_t;
+typedef struct femm_arc_view_s  {
+    int32_t n0, n1;
+    double arc_deg, max_side_deg;
+    int32_t bdry_idx;
+    int32_t hidden;
+    int32_t in_group;
+    int32_t conductor_idx;
+} femm_arc_view_t;
 typedef struct femm_lbl_view_s  { double x, y; int32_t block_idx; double max_area;
                                   int32_t circuit_idx; double mag_dir; int32_t turns;
-                                  int32_t is_external; } femm_lbl_view_t;
+                                  int32_t is_external; int32_t is_default;
+                                  int32_t in_group; } femm_lbl_view_t;
 
 size_t femm_num_nodes   (const femm_doc_t*);
 size_t femm_num_segments(const femm_doc_t*);

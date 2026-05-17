@@ -10,7 +10,7 @@ struct ContentView: View {
     @StateObject var solver = SolverRun()
     @State private var viewport = Viewport()
     @State private var tool: Tool = .select
-    @State private var pendingSegStart: Int32?
+    @StateObject private var geometryEditor = GeometryEditorState()
     @State private var showSavePanel = false
     @State private var showProblemSheet = false
     @State private var viewMode: ViewMode = .preprocessor
@@ -23,13 +23,11 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            toolbarBar
-            Divider()
             HSplitView {
                 Group {
                     if viewMode == .preprocessor {
                         CanvasView(doc: doc, viewport: $viewport, tool: $tool,
-                                   pendingSegmentStart: $pendingSegStart)
+                                   editor: geometryEditor)
                     } else {
                         PostCanvasView(doc: doc, viewport: $viewport,
                                        settings: $plotSettings, query: $pointQuery,
@@ -67,6 +65,34 @@ struct ContentView: View {
                     .frame(width: 260)
                 }
             }
+
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button { openLuaConsole() } label: {
+                    Label("Lua Console", systemImage: "terminal")
+                        .labelStyle(.iconOnly)
+                }
+                .help("Open Lua Console")
+
+                Button { showProblemSheet = true } label: {
+                    Label("Simulation Settings", systemImage: "slider.horizontal.3")
+                        .labelStyle(.iconOnly)
+                }
+                .help("Simulation Settings")
+
+                Button {
+                    analyze()
+                } label: {
+                    if solver.running {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Run", systemImage: "play.fill")
+                            .labelStyle(.iconOnly)
+                    }
+                }
+                .keyboardShortcut(.return, modifiers: [.command])
+                .disabled(solver.running)
+                .help("Run Solver")
+            }
         }
         .onKeyPress(.delete) {
             doc.deleteSelected()
@@ -80,42 +106,14 @@ struct ContentView: View {
             if !isEmpty { viewMode = .postprocessor }
             if isEmpty && viewMode == .postprocessor { viewMode = .preprocessor }
         }
+        .onChange(of: tool) { _, _ in
+            geometryEditor.cancelTransientTools()
+        }
     }
 
     private var titleText: String {
         let base = doc.fileURL?.lastPathComponent ?? "Untitled.\(doc.snapshot.physics.fileExt)"
         return doc.isDirty ? "• " + base : base
-    }
-
-    private var toolbarBar: some View {
-        HStack(spacing: 8) {
-            Picker("", selection: $tool) {
-                ForEach(Tool.allCases) { t in
-                    Label(t.rawValue, systemImage: t.symbol).tag(t)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 480)
-
-            Spacer()
-
-            Button("Open LUA Console") { openLuaConsole() }
-
-            Button("Simulation Settings") { showProblemSheet = true }
-
-            Button {
-                analyze()
-            } label: {
-                if solver.running {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Label("Run", systemImage: "play.fill")
-                }
-            }
-            .keyboardShortcut(.return, modifiers: [.command])
-            .disabled(solver.running)
-        }
-        .padding(.horizontal, 12).padding(.vertical, 8)
     }
 
     private var inspector: some View {
@@ -131,8 +129,10 @@ struct ContentView: View {
                 Label("Selection", systemImage: "selection.pin.in.out").font(.headline)
                 LabeledContent("Nodes", value: "\(doc.selectedNodes.count)")
                 LabeledContent("Segments", value: "\(doc.selectedSegments.count)")
+                LabeledContent("Arcs", value: "\(doc.selectedArcs.count)")
                 LabeledContent("Labels", value: "\(doc.selectedLabels.count)")
-                if !doc.selectedNodes.isEmpty || !doc.selectedSegments.isEmpty || !doc.selectedLabels.isEmpty {
+                if !doc.selectedNodes.isEmpty || !doc.selectedSegments.isEmpty ||
+                    !doc.selectedArcs.isEmpty || !doc.selectedLabels.isEmpty {
                     Button(role: .destructive) { doc.deleteSelected() } label: {
                         Label("Delete Selected", systemImage: "trash")
                     }
