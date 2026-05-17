@@ -18,6 +18,7 @@ struct ContentView: View {
     @State private var pointQuery: PointQuery?
     @State private var postTool: PostTool = .query
     @State private var logExpanded = false
+    @State private var geometryPanelExpanded = false
     @StateObject private var luaConsole = LuaConsoleModel()
     @State private var luaConsoleWindow: LuaConsoleWindowController?
 
@@ -35,17 +36,16 @@ struct ContentView: View {
                     }
                 }
                 .frame(minWidth: 500, idealWidth: 1130, minHeight: 300)
-                VSplitView {
-                    if viewMode == .preprocessor {
-                        inspector.frame(minHeight: 180, idealHeight: 220)
-                        PropertyBrowser(doc: doc).frame(minHeight: 200)
-                    } else {
+                if viewMode == .preprocessor {
+                    GeometryRightPanel(doc: doc, isExpanded: $geometryPanelExpanded)
+                } else {
+                    VSplitView {
                         PostProcessorPanel(doc: doc, settings: $plotSettings,
                                            query: $pointQuery, postTool: $postTool)
                             .frame(minHeight: 400)
                     }
+                    .frame(minWidth: 180, idealWidth: 200, maxWidth: 500)
                 }
-                .frame(minWidth: 180, idealWidth: 200, maxWidth: 500)
             }
             if logExpanded {
                 Divider()
@@ -114,38 +114,6 @@ struct ContentView: View {
     private var titleText: String {
         let base = doc.fileURL?.lastPathComponent ?? "Untitled.\(doc.snapshot.physics.fileExt)"
         return doc.isDirty ? "• " + base : base
-    }
-
-    private var inspector: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Document", systemImage: "doc").font(.headline)
-                LabeledContent("Physics", value: doc.snapshot.physics.displayName)
-                LabeledContent("Nodes",    value: "\(doc.snapshot.nodes.count)")
-                LabeledContent("Segments", value: "\(doc.snapshot.segments.count)")
-                LabeledContent("Arcs",     value: "\(doc.snapshot.arcs.count)")
-                LabeledContent("Labels",   value: "\(doc.snapshot.labels.count)")
-                Divider()
-                Label("Selection", systemImage: "selection.pin.in.out").font(.headline)
-                LabeledContent("Nodes", value: "\(doc.selectedNodes.count)")
-                LabeledContent("Segments", value: "\(doc.selectedSegments.count)")
-                LabeledContent("Arcs", value: "\(doc.selectedArcs.count)")
-                LabeledContent("Labels", value: "\(doc.selectedLabels.count)")
-                if !doc.selectedNodes.isEmpty || !doc.selectedSegments.isEmpty ||
-                    !doc.selectedArcs.isEmpty || !doc.selectedLabels.isEmpty {
-                    Button(role: .destructive) { doc.deleteSelected() } label: {
-                        Label("Delete Selected", systemImage: "trash")
-                    }
-                }
-                Divider()
-                SelectedPropertyInspector(doc: doc)
-                Divider()
-                Text("Tip: click to place nodes; in *Add Segment* mode, two clicks create a segment (snaps to nearby nodes within 14 px). Option+drag pans.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(12)
-        }
     }
 
     private var logPane: some View {

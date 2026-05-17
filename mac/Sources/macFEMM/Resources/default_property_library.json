@@ -1,0 +1,146 @@
+[
+  {
+    "id": "mag-air",
+    "physics": "magnetics",
+    "kind": "materials",
+    "name": "Air",
+    "summary": "mu_r = 1, sigma = 0",
+    "values": { "muX": 1, "muY": 1, "sigma": 0 }
+  },
+  {
+    "id": "mag-copper",
+    "physics": "magnetics",
+    "kind": "materials",
+    "name": "Copper",
+    "summary": "mu_r = 1, sigma = 58 MS/m",
+    "values": { "muX": 1, "muY": 1, "sigma": 58 }
+  },
+  {
+    "id": "mag-1010-steel",
+    "physics": "magnetics",
+    "kind": "materials",
+    "name": "1010 Steel",
+    "summary": "Linear steel, mu_r = 4000",
+    "values": { "muX": 4000, "muY": 4000, "sigma": 2 }
+  },
+  {
+    "id": "mag-a0",
+    "physics": "magnetics",
+    "kind": "boundaries",
+    "name": "A = 0",
+    "summary": "Prescribed magnetic vector potential",
+    "values": { "format": 0, "A0": 0 }
+  },
+  {
+    "id": "mag-periodic",
+    "physics": "magnetics",
+    "kind": "boundaries",
+    "name": "Periodic",
+    "summary": "Periodic boundary",
+    "values": { "format": 4 }
+  },
+  {
+    "id": "mag-antiperiodic",
+    "physics": "magnetics",
+    "kind": "boundaries",
+    "name": "Antiperiodic",
+    "summary": "Antiperiodic boundary",
+    "values": { "format": 5 }
+  },
+  {
+    "id": "es-air",
+    "physics": "electrostatics",
+    "kind": "materials",
+    "name": "Air",
+    "summary": "epsilon_r = 1",
+    "values": { "ex": 1, "ey": 1, "qv": 0 }
+  },
+  {
+    "id": "es-fr4",
+    "physics": "electrostatics",
+    "kind": "materials",
+    "name": "FR-4",
+    "summary": "epsilon_r about 4.4",
+    "values": { "ex": 4.4, "ey": 4.4, "qv": 0 }
+  },
+  {
+    "id": "es-ground",
+    "physics": "electrostatics",
+    "kind": "boundaries",
+    "name": "Ground",
+    "summary": "Fixed voltage, V = 0",
+    "values": { "format": 0, "V": 0 }
+  },
+  {
+    "id": "es-1v",
+    "physics": "electrostatics",
+    "kind": "boundaries",
+    "name": "Fixed 1 V",
+    "summary": "Fixed voltage, V = 1",
+    "values": { "format": 0, "V": 1 }
+  },
+  {
+    "id": "heat-air",
+    "physics": "heat",
+    "kind": "materials",
+    "name": "Air",
+    "summary": "Low thermal conductivity",
+    "values": { "Kx": 0.026, "Ky": 0.026 }
+  },
+  {
+    "id": "heat-copper",
+    "physics": "heat",
+    "kind": "materials",
+    "name": "Copper",
+    "summary": "K = 401 W/(m K)",
+    "values": { "Kx": 401, "Ky": 401 }
+  },
+  {
+    "id": "heat-fixed300",
+    "physics": "heat",
+    "kind": "boundaries",
+    "name": "Fixed 300 K",
+    "summary": "Fixed temperature",
+    "values": { "format": 0, "Tset": 300 }
+  },
+  {
+    "id": "heat-convection",
+    "physics": "heat",
+    "kind": "boundaries",
+    "name": "Convection Ambient",
+    "summary": "h = 10, Tinf = 300 K",
+    "values": { "format": 2, "h": 10, "Tinf": 300 }
+  },
+  {
+    "id": "curr-copper",
+    "physics": "current",
+    "kind": "materials",
+    "name": "Copper",
+    "summary": "sigma = 5.8e7 S/m",
+    "values": { "ox": 58000000, "oy": 58000000, "ex": 1, "ey": 1 }
+  },
+  {
+    "id": "curr-aluminum",
+    "physics": "current",
+    "kind": "materials",
+    "name": "Aluminum",
+    "summary": "sigma = 3.5e7 S/m",
+    "values": { "ox": 35000000, "oy": 35000000, "ex": 1, "ey": 1 }
+  },
+  {
+    "id": "curr-ground",
+    "physics": "current",
+    "kind": "boundaries",
+    "name": "Ground",
+    "summary": "Fixed voltage, V = 0",
+    "values": { "format": 0, "vsRe": 0, "vsIm": 0 }
+  },
+  {
+    "id": "curr-1v",
+    "physics": "current",
+    "kind": "boundaries",
+    "name": "Fixed 1 V",
+    "summary": "Fixed voltage, V = 1",
+    "values": { "format": 0, "vsRe": 1, "vsIm": 0 }
+  }
+]

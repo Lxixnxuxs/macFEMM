@@ -192,10 +192,10 @@ final class FemmDocument: ObservableObject {
     @Published var selectedLabels: Set<Int> = []
 
     func clearSelection() {
-        selectedNodes.removeAll()
-        selectedSegments.removeAll()
-        selectedArcs.removeAll()
-        selectedLabels.removeAll()
+        selectedNodes = []
+        selectedSegments = []
+        selectedArcs = []
+        selectedLabels = []
     }
 
     var hasSelection: Bool {
@@ -377,10 +377,10 @@ final class FemmDocument: ObservableObject {
         handle = newHandle
         resultHandle = nil
         fileURL = path.map { URL(fileURLWithPath: $0) }
-        selectedNodes.removeAll()
-        selectedSegments.removeAll()
-        selectedArcs.removeAll()
-        selectedLabels.removeAll()
+        selectedNodes = []
+        selectedSegments = []
+        selectedArcs = []
+        selectedLabels = []
         contour.removeAll()
         result = ResultSnapshot()
         isDirty = true
@@ -396,10 +396,10 @@ final class FemmDocument: ObservableObject {
     }
 
     func refreshAfterLuaEvaluation() {
-        selectedNodes.removeAll()
-        selectedSegments.removeAll()
-        selectedArcs.removeAll()
-        selectedLabels.removeAll()
+        selectedNodes = []
+        selectedSegments = []
+        selectedArcs = []
+        selectedLabels = []
         isDirty = true
         rebuildSnapshot()
         if resultHandle != nil { rebuildResultSnapshot() }
@@ -647,10 +647,10 @@ final class FemmDocument: ObservableObject {
         if !selectedNodes.isEmpty {
             for i in selectedNodes.sorted(by: >) { femm_delete_node(h, Int32(i)) }
         }
-        selectedNodes.removeAll()
-        selectedSegments.removeAll()
-        selectedArcs.removeAll()
-        selectedLabels.removeAll()
+        selectedNodes = []
+        selectedSegments = []
+        selectedArcs = []
+        selectedLabels = []
         isDirty = true
         rebuildSnapshot()
     }
@@ -731,25 +731,25 @@ final class FemmDocument: ObservableObject {
         }
         isDirty = true
         rebuildSnapshot()
-        selectedNodes.removeAll()
+        selectedNodes = []
     }
     func deleteSegments(at indices: [Int]) {
         guard let h = handle, !indices.isEmpty else { return }
         recordUndoPoint()
         for i in indices.sorted(by: >) { femm_delete_segment(h, Int32(i)) }
-        isDirty = true; rebuildSnapshot(); selectedSegments.removeAll()
+        isDirty = true; rebuildSnapshot(); selectedSegments = []
     }
     func deleteArcs(at indices: [Int]) {
         guard let h = handle, !indices.isEmpty else { return }
         recordUndoPoint()
         for i in indices.sorted(by: >) { femm_delete_arc(h, Int32(i)) }
-        isDirty = true; rebuildSnapshot(); selectedArcs.removeAll()
+        isDirty = true; rebuildSnapshot(); selectedArcs = []
     }
     func deleteLabels(at indices: [Int]) {
         guard let h = handle, !indices.isEmpty else { return }
         recordUndoPoint()
         for i in indices.sorted(by: >) { femm_delete_label(h, Int32(i)) }
-        isDirty = true; rebuildSnapshot(); selectedLabels.removeAll()
+        isDirty = true; rebuildSnapshot(); selectedLabels = []
     }
     func moveNode(idx: Int, x: Double, y: Double) {
         guard let h = handle else { return }
@@ -908,8 +908,8 @@ final class FemmDocument: ObservableObject {
     }
 
     private func propName(_ idx: Int32, in entries: [DocSnapshot.PropEntry]) -> String? {
-        guard idx >= 0 else { return nil }
-        return entries.first { $0.idx == idx }?.name
+        guard idx > 0 else { return nil }
+        return entries.first { $0.idx == idx - 1 }?.name
     }
 
     private func copyNodeProperties(from node: DocSnapshot.Node, to idx: Int32, h: OpaquePointer) {
@@ -979,12 +979,30 @@ final class FemmDocument: ObservableObject {
         }
         isDirty = true; rebuildSnapshot()
     }
+    func assignSegmentConductor(_ name: String?) {
+        guard let h = handle, !selectedSegments.isEmpty else { return }
+        recordUndoPoint()
+        let cname = name ?? ""
+        for i in selectedSegments {
+            cname.withCString { femm_set_segment_conductor(h, Int32(i), name == nil ? nil : $0) }
+        }
+        isDirty = true; rebuildSnapshot()
+    }
     func assignArcBoundary(_ name: String?) {
         guard let h = handle, !selectedArcs.isEmpty else { return }
         recordUndoPoint()
         let cname = name ?? ""
         for i in selectedArcs {
             cname.withCString { femm_set_arc_boundary(h, Int32(i), name == nil ? nil : $0) }
+        }
+        isDirty = true; rebuildSnapshot()
+    }
+    func assignArcConductor(_ name: String?) {
+        guard let h = handle, !selectedArcs.isEmpty else { return }
+        recordUndoPoint()
+        let cname = name ?? ""
+        for i in selectedArcs {
+            cname.withCString { femm_set_arc_conductor(h, Int32(i), name == nil ? nil : $0) }
         }
         isDirty = true; rebuildSnapshot()
     }
@@ -1024,10 +1042,34 @@ final class FemmDocument: ObservableObject {
         for i in selectedSegments { femm_set_segment_max_side(h, Int32(i), ms) }
         isDirty = true; rebuildSnapshot()
     }
+    func setSelectedSegmentHidden(_ hidden: Bool) {
+        guard let h = handle, !selectedSegments.isEmpty else { return }
+        recordUndoPoint()
+        for i in selectedSegments { femm_set_segment_hidden(h, Int32(i), hidden ? 1 : 0) }
+        isDirty = true; rebuildSnapshot()
+    }
     func setArcMaxSideDeg(_ deg: Double) {
         guard let h = handle, !selectedArcs.isEmpty else { return }
         recordUndoPoint()
         for i in selectedArcs { femm_set_arc_max_side(h, Int32(i), deg) }
+        isDirty = true; rebuildSnapshot()
+    }
+    func setSelectedArcHidden(_ hidden: Bool) {
+        guard let h = handle, !selectedArcs.isEmpty else { return }
+        recordUndoPoint()
+        for i in selectedArcs { femm_set_arc_hidden(h, Int32(i), hidden ? 1 : 0) }
+        isDirty = true; rebuildSnapshot()
+    }
+    func setSelectedLabelExternal(_ external: Bool) {
+        guard let h = handle, !selectedLabels.isEmpty else { return }
+        recordUndoPoint()
+        for i in selectedLabels { femm_set_block_label_external(h, Int32(i), external ? 1 : 0) }
+        isDirty = true; rebuildSnapshot()
+    }
+    func setSelectedLabelDefault(_ isDefault: Bool) {
+        guard let h = handle, !selectedLabels.isEmpty else { return }
+        recordUndoPoint()
+        for i in selectedLabels { femm_set_block_label_default(h, Int32(i), isDefault ? 1 : 0) }
         isDirty = true; rebuildSnapshot()
     }
     func setSelectedGroup(_ group: Int32) {

@@ -36,6 +36,10 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BIN_DIR/macFEMM" "$APP/Contents/MacOS/macFEMM"
 
+if [ -d "$BIN_DIR/macFEMM_macFEMM.bundle" ]; then
+  cp -R "$BIN_DIR/macFEMM_macFEMM.bundle" "$APP/Contents/Resources/"
+fi
+
 # Bundle the solver binaries + triangle right next to the main executable so
 # FEMM_BIN logic can find them (the library walks upward for a build/
 # directory; we also set FEMM_BIN via a launcher if needed later).

@@ -888,24 +888,35 @@ struct CanvasView: View {
     }
 
     private func handleSelectTap(at p: CGPoint, world: CGPoint, size: CGSize) {
-        // Prefer the closest node within 10 px; else a segment within 8 px;
-        // else a label within 10 px; else clear.
+        // Prefer nodes and labels as point-like selections. For line-like
+        // geometry, choose the closest segment or arc instead of hard-prioritizing
+        // one kind; overlapping FEMM geometry can otherwise select the wrong type.
         let hitRadius: CGFloat = 10
         if let (i, _) = closestNode(to: p, size: size, maxDist: hitRadius) {
             applySingleSelection(kind: .node, index: i)
             return
         }
-        if let (i, _) = closestSegment(to: p, size: size, maxDist: 8) {
-            applySingleSelection(kind: .segment, index: i)
-            return
-        }
-        if let (i, _) = closestArc(to: p, size: size, maxDist: 8) {
-            applySingleSelection(kind: .arc, index: i)
-            return
-        }
         if let (i, _) = closestLabel(to: p, size: size, maxDist: hitRadius) {
             applySingleSelection(kind: .label, index: i)
             return
+        }
+        let segmentHit = closestSegment(to: p, size: size, maxDist: 8)
+        let arcHit = closestArc(to: p, size: size, maxDist: 8)
+        switch (segmentHit, arcHit) {
+        case let ((i, ds)?, (_, da)?) where ds <= da:
+            applySingleSelection(kind: .segment, index: i)
+            return
+        case let ((_, _)?, (i, _)?) :
+            applySingleSelection(kind: .arc, index: i)
+            return
+        case let ((i, _)?, nil):
+            applySingleSelection(kind: .segment, index: i)
+            return
+        case let (nil, (i, _)?):
+            applySingleSelection(kind: .arc, index: i)
+            return
+        case (nil, nil):
+            break
         }
         if !editor.extendSelection && !editor.toggleSelection {
             doc.clearSelection()
@@ -1121,27 +1132,35 @@ struct CanvasView: View {
 
     private func addSelection(kind: SelectionKind, index: Int) {
         switch kind {
-        case .node: doc.selectedNodes.insert(index)
-        case .segment: doc.selectedSegments.insert(index)
-        case .arc: doc.selectedArcs.insert(index)
-        case .label: doc.selectedLabels.insert(index)
+        case .node:
+            var selection = doc.selectedNodes
+            selection.insert(index)
+            doc.selectedNodes = selection
+        case .segment:
+            var selection = doc.selectedSegments
+            selection.insert(index)
+            doc.selectedSegments = selection
+        case .arc:
+            var selection = doc.selectedArcs
+            selection.insert(index)
+            doc.selectedArcs = selection
+        case .label:
+            var selection = doc.selectedLabels
+            selection.insert(index)
+            doc.selectedLabels = selection
         }
     }
 
     private func toggleSelection(kind: SelectionKind, index: Int) {
         switch kind {
         case .node:
-            if doc.selectedNodes.contains(index) { doc.selectedNodes.remove(index) }
-            else { doc.selectedNodes.insert(index) }
+            doc.selectedNodes = toggled(doc.selectedNodes, index)
         case .segment:
-            if doc.selectedSegments.contains(index) { doc.selectedSegments.remove(index) }
-            else { doc.selectedSegments.insert(index) }
+            doc.selectedSegments = toggled(doc.selectedSegments, index)
         case .arc:
-            if doc.selectedArcs.contains(index) { doc.selectedArcs.remove(index) }
-            else { doc.selectedArcs.insert(index) }
+            doc.selectedArcs = toggled(doc.selectedArcs, index)
         case .label:
-            if doc.selectedLabels.contains(index) { doc.selectedLabels.remove(index) }
-            else { doc.selectedLabels.insert(index) }
+            doc.selectedLabels = toggled(doc.selectedLabels, index)
         }
     }
 
@@ -1182,15 +1201,15 @@ struct CanvasView: View {
         }
 
         if editor.toggleSelection {
-            toggleSet(&doc.selectedNodes, with: nodes)
-            toggleSet(&doc.selectedSegments, with: segments)
-            toggleSet(&doc.selectedArcs, with: arcs)
-            toggleSet(&doc.selectedLabels, with: labels)
+            doc.selectedNodes = toggled(doc.selectedNodes, with: nodes)
+            doc.selectedSegments = toggled(doc.selectedSegments, with: segments)
+            doc.selectedArcs = toggled(doc.selectedArcs, with: arcs)
+            doc.selectedLabels = toggled(doc.selectedLabels, with: labels)
         } else if editor.extendSelection {
-            doc.selectedNodes.formUnion(nodes)
-            doc.selectedSegments.formUnion(segments)
-            doc.selectedArcs.formUnion(arcs)
-            doc.selectedLabels.formUnion(labels)
+            doc.selectedNodes = doc.selectedNodes.union(nodes)
+            doc.selectedSegments = doc.selectedSegments.union(segments)
+            doc.selectedArcs = doc.selectedArcs.union(arcs)
+            doc.selectedLabels = doc.selectedLabels.union(labels)
         } else {
             doc.selectedNodes = nodes
             doc.selectedSegments = segments
@@ -1199,11 +1218,20 @@ struct CanvasView: View {
         }
     }
 
-    private func toggleSet(_ target: inout Set<Int>, with values: Set<Int>) {
+    private func toggled(_ source: Set<Int>, _ value: Int) -> Set<Int> {
+        var result = source
+        if result.contains(value) { result.remove(value) }
+        else { result.insert(value) }
+        return result
+    }
+
+    private func toggled(_ source: Set<Int>, with values: Set<Int>) -> Set<Int> {
+        var result = source
         for value in values {
-            if target.contains(value) { target.remove(value) }
-            else { target.insert(value) }
+            if result.contains(value) { result.remove(value) }
+            else { result.insert(value) }
         }
+        return result
     }
 
     private func normalizedRect(from a: CGPoint, to b: CGPoint) -> CGRect {
