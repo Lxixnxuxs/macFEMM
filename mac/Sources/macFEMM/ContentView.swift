@@ -7,6 +7,7 @@ import FemmCore
 
 struct ContentView: View {
     @StateObject var doc: FemmDocument
+    @ObservedObject var appState: AppState
     @StateObject var solver = SolverRun()
     @State private var viewport = Viewport()
     @State private var tool: Tool = .select
@@ -20,7 +21,10 @@ struct ContentView: View {
     @State private var logExpanded = false
     @State private var geometryPanelExpanded = false
     @StateObject private var luaConsole = LuaConsoleModel()
+    @StateObject private var integralAnalysis = ResultIntegralAnalysisModel()
     @State private var luaConsoleWindow: LuaConsoleWindowController?
+    @State private var lineIntegralWindow: ResultIntegralWindowController?
+    @State private var blockIntegralWindow: ResultIntegralWindowController?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,19 +36,15 @@ struct ContentView: View {
                     } else {
                         PostCanvasView(doc: doc, viewport: $viewport,
                                        settings: $plotSettings, query: $pointQuery,
-                                       postTool: $postTool)
+                                       postTool: $postTool,
+                                       integralAnalysis: integralAnalysis,
+                                       openLineIntegrals: openLineIntegrals,
+                                       openBlockIntegrals: openBlockIntegrals)
                     }
                 }
                 .frame(minWidth: 500, idealWidth: 1130, minHeight: 300)
                 if viewMode == .preprocessor {
                     GeometryRightPanel(doc: doc, isExpanded: $geometryPanelExpanded)
-                } else {
-                    VSplitView {
-                        PostProcessorPanel(doc: doc, settings: $plotSettings,
-                                           query: $pointQuery, postTool: $postTool)
-                            .frame(minHeight: 400)
-                    }
-                    .frame(minWidth: 180, idealWidth: 200, maxWidth: 500)
                 }
             }
             if logExpanded {
@@ -98,22 +98,40 @@ struct ContentView: View {
             doc.deleteSelected()
             return .handled
         }
-        .onAppear { fitOnce() }
+        .onAppear {
+            fitOnce()
+            syncCommandContext()
+        }
         .sheet(isPresented: $showProblemSheet) {
             ProblemDefinitionForm(doc: doc) { showProblemSheet = false }
         }
+        .onChange(of: viewMode) { _, _ in syncCommandContext() }
+        .onChange(of: postTool) { _, _ in syncCommandContext() }
+        .onChange(of: doc.canUndo) { _, _ in syncCommandContext() }
+        .onChange(of: doc.contour.count) { _, _ in syncCommandContext() }
         .onChange(of: doc.result.isEmpty) { _, isEmpty in
             if !isEmpty { viewMode = .postprocessor }
             if isEmpty && viewMode == .postprocessor { viewMode = .preprocessor }
+            syncCommandContext()
         }
         .onChange(of: tool) { _, _ in
             geometryEditor.cancelTransientTools()
+        }
+        .onChange(of: doc.snapshot.physics) { _, physics in
+            integralAnalysis.resetForPhysics(physics)
         }
     }
 
     private var titleText: String {
         let base = doc.fileURL?.lastPathComponent ?? "Untitled.\(doc.snapshot.physics.fileExt)"
         return doc.isDirty ? "• " + base : base
+    }
+
+    private func syncCommandContext() {
+        let contourUndo = viewMode == .postprocessor && postTool == .contour && !doc.contour.isEmpty
+        appState.updateCommandContext(viewMode: viewMode,
+                                      postTool: postTool,
+                                      canUndo: doc.canUndo || contourUndo)
     }
 
     private var logPane: some View {
@@ -200,5 +218,25 @@ struct ContentView: View {
             luaConsoleWindow = LuaConsoleWindowController(model: luaConsole)
         }
         luaConsoleWindow?.show(document: doc)
+    }
+
+    private func openLineIntegrals() {
+        postTool = .contour
+        if lineIntegralWindow == nil {
+            lineIntegralWindow = ResultIntegralWindowController(kind: .line,
+                                                                analysis: integralAnalysis)
+        }
+        integralAnalysis.computeLine(doc: doc)
+        lineIntegralWindow?.show()
+    }
+
+    private func openBlockIntegrals() {
+        postTool = .region
+        if blockIntegralWindow == nil {
+            blockIntegralWindow = ResultIntegralWindowController(kind: .block,
+                                                                 analysis: integralAnalysis)
+        }
+        integralAnalysis.computeBlock(doc: doc)
+        blockIntegralWindow?.show()
     }
 }

@@ -20,11 +20,13 @@ enum PlotField: String, CaseIterable, Identifiable {
 enum PostTool: String, CaseIterable, Identifiable {
     case query   = "Query"
     case contour = "Contour"
+    case region  = "Region"
     var id: String { rawValue }
     var symbol: String {
         switch self {
         case .query:   return "hand.tap"
         case .contour: return "scribble.variable"
+        case .region:  return "selection.pin.in.out"
         }
     }
 }
@@ -247,6 +249,383 @@ struct ColorBarLegend: View {
     }
 }
 
+// MARK: - Floating result tools
+
+struct ResultToolPalette: View {
+    @ObservedObject var doc: FemmDocument
+    @Binding var viewport: Viewport
+    @Binding var settings: PlotSettings
+    @Binding var query: PointQuery?
+    @Binding var postTool: PostTool
+    var openLineIntegrals: () -> Void = {}
+    var openBlockIntegrals: () -> Void = {}
+
+    @State private var plotOptionsShown = false
+    @State private var contourOptionsShown = false
+    @State private var queryShown = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            paletteSection {
+                ForEach(PostTool.allCases) { item in
+                    toolButton(item)
+                }
+            }
+            paletteDivider
+            actionButton(symbol: "plus.magnifyingglass", title: "Zoom In") {
+                viewport.scale *= 1.1
+            }
+            actionButton(symbol: "minus.magnifyingglass", title: "Zoom Out") {
+                viewport.scale /= 1.1
+            }
+            actionButton(symbol: "arrow.up.left.and.arrow.down.right", title: "Fit") {
+                fit()
+            }
+            paletteDivider
+            toggleButton(symbol: settings.field == .scalar ? "function" : "arrow.up.right.circle",
+                         title: fieldTitle,
+                         isOn: true) {
+                settings.field = settings.field == .scalar ? .vectorMag : .scalar
+            }
+            toggleButton(symbol: "paintpalette", title: "Density", isOn: settings.showDensity) {
+                settings.showDensity.toggle()
+            }
+            toggleButton(symbol: "line.3.horizontal.decrease", title: "Contours", isOn: settings.showContour) {
+                settings.showContour.toggle()
+            }
+            toggleButton(symbol: "arrow.up.forward", title: "Vectors", isOn: settings.showVector) {
+                settings.showVector.toggle()
+            }
+            toggleButton(symbol: "triangle", title: "Mesh", isOn: settings.showMesh) {
+                settings.showMesh.toggle()
+            }
+            toggleButton(symbol: "skew", title: "Geometry", isOn: settings.showGeometry) {
+                settings.showGeometry.toggle()
+            }
+            paletteDivider
+            popoverButton(symbol: "slider.horizontal.3", title: "Plot Options", isPresented: $plotOptionsShown) {
+                ResultPlotOptions(settings: $settings, doc: doc)
+                    .padding(14)
+                    .frame(width: 240)
+            }
+            if postTool == .query {
+                popoverButton(symbol: "info.circle", title: "Query Result", isPresented: $queryShown) {
+                    ResultQueryPopover(doc: doc, query: query)
+                        .padding(14)
+                        .frame(width: 230)
+                }
+            }
+            if postTool == .contour {
+                actionButton(symbol: "arrow.uturn.backward", title: "Undo Last Contour Point",
+                             disabled: doc.contour.isEmpty) {
+                    doc.contourRemoveLast()
+                }
+                actionButton(symbol: "trash", title: "Clear Contour",
+                             disabled: doc.contour.isEmpty,
+                             role: .destructive) {
+                    doc.contourClear()
+                }
+                popoverButton(symbol: "waveform.path.ecg", title: "Contour Analysis",
+                              isPresented: $contourOptionsShown) {
+                    ResultContourPopover(doc: doc,
+                                         openLineIntegrals: openLineIntegrals)
+                        .padding(14)
+                        .frame(width: 360, height: 520)
+                }
+            }
+            if postTool == .region {
+                actionButton(symbol: "xmark.circle", title: "Clear Region Selection",
+                             disabled: doc.selectedLabels.isEmpty) {
+                    doc.selectedLabels = []
+                }
+            }
+        }
+        .padding(6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 0.5)
+        }
+        .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 3)
+    }
+
+    private func paletteSection<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 4) { content() }
+    }
+
+    private var paletteDivider: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor).opacity(0.55))
+            .frame(width: 22, height: 1)
+            .padding(.vertical, 1)
+    }
+
+    private func toolButton(_ item: PostTool) -> some View {
+        let active = item == postTool
+        return Button {
+            postTool = item
+        } label: {
+            Image(systemName: item.symbol)
+                .font(.system(size: 14, weight: active ? .semibold : .regular))
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: 28, height: 28)
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(active ? Color.accentColor : Color.primary.opacity(0.82))
+        .background {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(active ? Color.accentColor.opacity(0.16) : Color.clear)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(active ? Color.accentColor.opacity(0.55) : Color.clear, lineWidth: 1)
+        }
+        .help(item.rawValue)
+        .quickPaletteTooltip(item.rawValue)
+    }
+
+    private func toggleButton(symbol: String, title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: isOn ? .semibold : .regular))
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: 28, height: 28)
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isOn ? Color.accentColor : Color.primary.opacity(0.82))
+        .background {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isOn ? Color.accentColor.opacity(0.14) : Color.clear)
+        }
+        .help(title)
+        .quickPaletteTooltip(title)
+    }
+
+    private func actionButton(symbol: String,
+                              title: String,
+                              disabled: Bool = false,
+                              role: ButtonRole? = nil,
+                              action: @escaping () -> Void) -> some View {
+        Button(role: role, action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 14))
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: 28, height: 28)
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(role == .destructive ? Color.red.opacity(disabled ? 0.32 : 0.9)
+                                              : Color.primary.opacity(disabled ? 0.32 : 0.82))
+        .disabled(disabled)
+        .help(title)
+        .quickPaletteTooltip(title)
+    }
+
+    private func popoverButton<Content: View>(symbol: String,
+                                              title: String,
+                                              isPresented: Binding<Bool>,
+                                              @ViewBuilder content: @escaping () -> Content) -> some View {
+        Button {
+            isPresented.wrappedValue.toggle()
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 14))
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: 28, height: 28)
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.primary.opacity(0.82))
+        .help(title)
+        .quickPaletteTooltip(title)
+        .popover(isPresented: isPresented, arrowEdge: .leading) {
+            content()
+        }
+    }
+
+    private var fieldTitle: String {
+        switch settings.field {
+        case .scalar: return "Field: Scalar"
+        case .vectorMag: return "Field: Vector Magnitude"
+        }
+    }
+
+    private func fit() {
+        guard let b = doc.bounds else { return }
+        let w = max(b.max.x - b.min.x, 1e-6)
+        let h = max(b.max.y - b.min.y, 1e-6)
+        let pad = 1.1
+        viewport.center = CGPoint(x: (b.min.x + b.max.x) / 2,
+                                  y: (b.min.y + b.max.y) / 2)
+        viewport.scale = min(800 / (w * pad), 600 / (h * pad))
+    }
+}
+
+private struct ResultPlotOptions: View {
+    @Binding var settings: PlotSettings
+    @ObservedObject var doc: FemmDocument
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Plot", systemImage: "slider.horizontal.3")
+                .font(.headline)
+            Picker("Field", selection: $settings.field) {
+                ForEach(PlotField.allCases) { field in
+                    Text(fieldLabel(field)).tag(field)
+                }
+            }
+            .pickerStyle(.segmented)
+            Toggle("Smooth shading", isOn: $settings.smoothShading)
+            Toggle("Auto range", isOn: $settings.autoRange)
+            if !settings.autoRange {
+                HStack {
+                    TextField("min", value: $settings.manualMin, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("max", value: $settings.manualMax, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+            Divider()
+            Toggle("Density", isOn: $settings.showDensity)
+            Toggle("Contours", isOn: $settings.showContour)
+            if settings.showContour {
+                Stepper("Levels: \(settings.contourLevels)",
+                        value: $settings.contourLevels, in: 3...60)
+            }
+            Toggle("Vectors", isOn: $settings.showVector)
+            if settings.showVector {
+                Stepper("Grid: \(settings.vectorGrid)",
+                        value: $settings.vectorGrid, in: 6...80)
+            }
+            Toggle("Mesh", isOn: $settings.showMesh)
+            Toggle("Geometry", isOn: $settings.showGeometry)
+        }
+        .font(.caption)
+    }
+
+    private func fieldLabel(_ field: PlotField) -> String {
+        switch field {
+        case .scalar: return doc.result.physics.scalarName
+        case .vectorMag: return "|\(doc.result.physics.vectorName)|"
+        }
+    }
+}
+
+private struct ResultQueryPopover: View {
+    @ObservedObject var doc: FemmDocument
+    let query: PointQuery?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Point Query", systemImage: "hand.tap")
+                .font(.headline)
+            if let q = query {
+                LabeledContent("x", value: String(format: "%.6g", q.x))
+                LabeledContent("y", value: String(format: "%.6g", q.y))
+                LabeledContent(doc.result.physics.scalarName,
+                               value: String(format: "%.6g", q.scalar))
+                LabeledContent("\(doc.result.physics.vectorName)x",
+                               value: String(format: "%.6g", q.vx))
+                LabeledContent("\(doc.result.physics.vectorName)y",
+                               value: String(format: "%.6g", q.vy))
+                LabeledContent("|\(doc.result.physics.vectorName)|",
+                               value: String(format: "%.6g", q.vmag))
+            } else {
+                Text("Click the result canvas to query.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption)
+    }
+}
+
+private struct ResultContourPopover: View {
+    @ObservedObject var doc: FemmDocument
+    var openLineIntegrals: () -> Void = {}
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Contour", systemImage: "scribble.variable")
+                    .font(.headline)
+                LabeledContent("Points", value: "\(doc.contour.count)")
+                HStack {
+                    Button("Undo Last") { doc.contourRemoveLast() }
+                        .disabled(doc.contour.isEmpty)
+                    Button("Clear", role: .destructive) { doc.contourClear() }
+                        .disabled(doc.contour.isEmpty)
+                }
+                BendArcControls(doc: doc)
+                Divider()
+                Button {
+                    openLineIntegrals()
+                } label: {
+                    Label("Open Line Integrals", systemImage: "sum")
+                }
+                .disabled(doc.contour.count < 2)
+                Divider()
+                XYPlotPanel(doc: doc)
+            }
+            .font(.caption)
+        }
+    }
+}
+
+struct QuickPaletteTooltip: ViewModifier {
+    let title: String
+    @State private var isVisible = false
+    @State private var pendingShow: DispatchWorkItem?
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                pendingShow?.cancel()
+                if hovering {
+                    let work = DispatchWorkItem {
+                        withAnimation(.easeOut(duration: 0.08)) {
+                            isVisible = true
+                        }
+                    }
+                    pendingShow = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: work)
+                } else {
+                    withAnimation(.easeOut(duration: 0.08)) {
+                        isVisible = false
+                    }
+                }
+            }
+            .overlay(alignment: .leading) {
+                if isVisible {
+                    Text(title)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 0.5)
+                        }
+                        .shadow(color: .black.opacity(0.14), radius: 7, x: 0, y: 2)
+                        .offset(x: 36)
+                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                        .allowsHitTesting(false)
+                        .zIndex(100)
+                }
+            }
+    }
+}
+
+extension View {
+    func quickPaletteTooltip(_ title: String) -> some View {
+        modifier(QuickPaletteTooltip(title: title))
+    }
+}
+
 // MARK: - Post-processor inspector panel
 
 struct PostProcessorPanel: View {
@@ -271,6 +650,8 @@ struct PostProcessorPanel: View {
                     toolPicker
                     if postTool == .contour {
                         contourControls
+                    } else if postTool == .region {
+                        regionControls
                     } else {
                         pointQuery
                     }
@@ -304,9 +685,25 @@ struct PostProcessorPanel: View {
             }
             BendArcControls(doc: doc)
             Divider()
-            IntegralPanel(doc: doc)
-            Divider()
+            Text("Line integral settings and live results are in the bottom canvas bar.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
             XYPlotPanel(doc: doc)
+        }.font(.caption)
+    }
+
+    private var regionControls: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Region", systemImage: "selection.pin.in.out").font(.subheadline).bold()
+            Text("Click result labels to select regions for block integrals.")
+                .font(.caption).foregroundStyle(.secondary)
+            LabeledContent("Selected labels", value: "\(doc.selectedLabels.count)")
+            Button("Clear Selection", role: .destructive) { doc.selectedLabels = [] }
+                .disabled(doc.selectedLabels.isEmpty)
+            Divider()
+            Text("Block integral settings and live results are in the bottom canvas bar.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }.font(.caption)
     }
 

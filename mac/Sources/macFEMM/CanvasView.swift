@@ -1648,6 +1648,7 @@ struct GeometryToolPalette: View {
         }
         .disabled(disabled)
         .help(item.rawValue)
+        .quickPaletteTooltip(item.rawValue)
     }
 
     private func actionButton(symbol: String,
@@ -1667,6 +1668,7 @@ struct GeometryToolPalette: View {
                                               : Color.primary.opacity(disabled ? 0.32 : 0.82))
         .disabled(disabled)
         .help(title)
+        .quickPaletteTooltip(title)
     }
 
     private var optionsButton: some View {
@@ -1681,6 +1683,7 @@ struct GeometryToolPalette: View {
         .buttonStyle(.plain)
         .foregroundStyle(Color.primary.opacity(0.82))
         .help("Tool Options")
+        .quickPaletteTooltip("Tool Options")
         .popover(isPresented: $optionsShown, arrowEdge: .leading) {
             toolOptions
                 .padding(14)

@@ -29,9 +29,9 @@ struct FemmApp: App {
         }
         .commands {
             CommandGroup(replacing: .undoRedo) {
-                Button("Undo") { appState.document?.undo() }
+                Button("Undo") { appState.performUndoCommand() }
                     .keyboardShortcut("z", modifiers: [.command])
-                    .disabled(appState.document?.canUndo != true)
+                    .disabled(!appState.activeUndoAvailable)
             }
             CommandGroup(replacing: .newItem) {
                 Menu("New") {
@@ -55,6 +55,9 @@ struct FemmApp: App {
 
 final class AppState: ObservableObject {
     @Published var document: FemmDocument?
+    @Published var activeViewMode: ViewMode = .preprocessor
+    @Published var activePostTool: PostTool = .query
+    @Published var activeUndoAvailable = false
 
     init() {
         // Point libfemm_core at the solver binaries bundled inside the .app,
@@ -113,13 +116,30 @@ final class AppState: ObservableObject {
             a.runModal()
         }
     }
+
+    func updateCommandContext(viewMode: ViewMode, postTool: PostTool, canUndo: Bool) {
+        activeViewMode = viewMode
+        activePostTool = postTool
+        activeUndoAvailable = canUndo
+    }
+
+    func performUndoCommand() {
+        guard let document else { return }
+        if activeViewMode == .postprocessor,
+           activePostTool == .contour,
+           !document.contour.isEmpty {
+            document.contourRemoveLast()
+        } else {
+            document.undo()
+        }
+    }
 }
 
 struct RootView: View {
     @ObservedObject var appState: AppState
     var body: some View {
         if let d = appState.document {
-            ContentView(doc: d).id(ObjectIdentifier(d))
+            ContentView(doc: d, appState: appState).id(ObjectIdentifier(d))
         } else {
             Text("No document").foregroundStyle(.secondary)
         }
