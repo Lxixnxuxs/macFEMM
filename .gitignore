@@ -70,5 +70,6 @@ bin/license.txt
 bin/matlib.dat
 bin/statlib.dat
 tests/out/
+dist/
 
 *.patch
